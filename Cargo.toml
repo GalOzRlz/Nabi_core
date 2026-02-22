@@ -1,6 +1,6 @@
 [package]
 name = "midi_fundsp"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2024"
 description = "Enables creation of live MIDI synthesizer software."
 readme = "README.md"
@@ -15,9 +15,9 @@ categories = ["hardware-support", "multimedia::audio"]
 fundsp = {version = "0.23.0", features = ["std", "fft"]}
 midir = "0.10.3"
 cpal = "0.17.1"
-anyhow = "1.0.100"
+anyhow = "1.0.102"
 midi-msg = "0.8.1"
-bare_metal_modulo = "1.2.5"
+bare_metal_modulo = "1.2.6"
 crossbeam-queue = "0.3.12"
 crossbeam-utils = "0.8.21"
 read_input = "0.8.6"

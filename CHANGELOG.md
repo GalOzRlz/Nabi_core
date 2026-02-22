@@ -1,3 +1,6 @@
+# 0.7.2
+  * Updated to anyhow 1.0.102 and bare_metal_modulo 1.2.6
+
 # 0.7.1
   * Factored the functionality  out of `SynthMsg::note_velocity()` into the `note_velocity_from()` function. 
 
