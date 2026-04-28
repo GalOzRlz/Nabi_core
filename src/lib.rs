@@ -155,6 +155,7 @@ impl SharedMidiState {
         ))
     }
 
+    /// Set an incoming control change in an `Array<Shared>` where the array index matches control index.
     pub fn set_control_change(&self, control_id: u8, value: u8) {
         self.control_change[control_id as usize].set_value(value as f32)
     }

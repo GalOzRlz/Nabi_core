@@ -307,6 +307,7 @@ pub fn guitarish(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     state.assemble_pitched_sound(Box::new(mix), adsr.boxed(state))
 }
 
+/// music box/prepared piano type instrument with Midi CC channel 74 controlling it's filter cutoff frequency
 pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let synth_adsr = Adsr {
         attack: 0.002,
@@ -328,7 +329,7 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         >> lowpass_hz(9000.0, 0.7))
         >> dcblock::<f64>();
 
-    // control index 74 used for cutoff frequency
+    // control channel 74 used for cutoff frequency
     let cut_off_cc = &state.control_change[74].value();
     let cutoff_frequency = 50.0 + cut_off_cc * 4950.0;
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
