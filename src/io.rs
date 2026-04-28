@@ -16,7 +16,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
-
+use midi_msg::ControlChange::CC;
 use crate::{NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, sound_builders::ProgramTable, control_change_from};
 
 #[derive(Clone, Debug)]
@@ -531,6 +531,10 @@ impl<const N: usize> MonoPlayer<N> {
                     };
                     self.change_synth(new_synth);
                     return Some(RelayedMessage::SynthChange);
+                }
+                ChannelVoiceMsg::ControlChange { control: CC { control, value } } => {
+                    for state in self.states.iter_mut() {
+                        state.set_control_change(*control, *value); }
                 }
                 _ => {}
             },
