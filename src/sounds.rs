@@ -3,10 +3,7 @@ use std::sync::Arc;
 use crate::sound_builders::{Adsr, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
-use fundsp::prelude::{
-    AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass,
-    resonator_hz,
-};
+use fundsp::prelude::{AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz};
 use fundsp::prelude64::{
     dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle,
     var, adsr_live, clip,
@@ -331,8 +328,8 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
         >> dcblock::<f64>();
 
     // control channel 74 used for cutoff frequency
-    let cut_off_cc = &state.control_change[74].value();
-    let cutoff_frequency = 50.0 + cut_off_cc * 4950.0;
+    let cut_off_cc = state.get_control_change(74);
+    let cutoff_frequency = 50.0 + cut_off_cc.value() * 4950.0;
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
 
     let body = (pass() * 0.7)

@@ -165,6 +165,11 @@ impl SharedMidiState {
     var(&self.control_change[idx])
     }
 
+    
+    pub fn get_control_change(&self, idx: usize) ->&Shared {
+        &self.control_change[idx]
+    }
+
     /// Encodes a MIDI `Note On` event.
     pub fn on(&self, pitch: u8, velocity: u8) {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));
