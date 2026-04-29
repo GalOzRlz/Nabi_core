@@ -1,5 +1,5 @@
 use fundsp::prelude64::*;
-
+use std::cmp::max;
 /// A comb-filter based plucked string synthesizer with independent pitch and gate control.
 ///
 /// # Inputs
@@ -11,22 +11,18 @@ use fundsp::prelude64::*;
 #[derive(Clone)]
 pub struct CombPluck {
     // Constants
-    sample_rate: f64,
+    sample_rate: f32,
     max_delay_samples: usize,
-    feedback: f64,
-    excitation_gain: f64,
-    smoothing: f64,
-
-
-    buffer: Vec<f64>,
+    max_delay_samples_f32: f32,
+    inv_max_delay: f32,
+    feedback: f32,
+    excitation_gain: f32,
+    smoothing: f32,
+    buffer: Vec<f32>,
     write_pos: usize,
-    read_pos_f: f64,
-
-    // Pitch tracking
-    current_freq: f64,
-    target_freq: f64,
-
-    // Gate detection
+    read_pos_f: f32,
+    current_freq: f32,
+    target_freq: f32,
     last_gate: f32,
 }
 
@@ -37,14 +33,17 @@ impl CombPluck {
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
     /// - `max_delay_seconds`: Maximum delay time for lowest frequency (defines lowest note).
     /// - `excitation_gain`: Volume of initial noise burst (0.0 to 1.0).
-    pub fn new(feedback: f64, max_delay_seconds: f64, excitation_gain: f64) -> Self {
-        let sample_rate = DEFAULT_SR;
+    pub fn new(feedback: f32, max_delay_seconds: f32, excitation_gain: f32) -> Self {
+        let sample_rate = DEFAULT_SR as f32;
         let max_delay_samples = (max_delay_seconds * sample_rate).ceil() as usize;
-        let max_delay_samples = Num::max(max_delay_samples, 2);
+        let max_delay_samples = max(max_delay_samples, 2);
+        let max_delay_samples_f32 = max_delay_samples as f32;
 
         Self {
             sample_rate,
             max_delay_samples,
+            max_delay_samples_f32,
+            inv_max_delay: 1.0 / max_delay_samples_f32,
             feedback: feedback.clamp(0.0, 1.0),
             excitation_gain: excitation_gain.clamp(0.0, 1.0),
             smoothing: 0.05,
@@ -61,7 +60,7 @@ impl CombPluck {
     }
 
     /// Set the smoothing coefficient for frequency changes.
-    pub fn set_smoothing(&mut self, smoothing: f64) {
+    pub fn set_smoothing(&mut self, smoothing: f32) {
         self.smoothing = smoothing.clamp(0.0, 1.0);
     }
 
@@ -72,7 +71,7 @@ impl CombPluck {
         }
 
         for sample in &mut self.buffer {
-            let noise = (fastrand::f64() * 2.0 - 1.0) * self.excitation_gain; // todo: provide your own noise source?
+            let noise = (fastrand::f32() * 2.0 - 1.0) * self.excitation_gain; // todo: provide your own noise source?
             *sample = noise;
         }
 
@@ -96,15 +95,17 @@ impl CombPluck {
 
         // Desired delay length in samples (fractional)
         let delay_samples = self.sample_rate / self.current_freq;
-        let delay_samples = delay_samples.min(self.max_delay_samples as f64);
+        let delay_samples = delay_samples.min(self.max_delay_samples_f32);
 
         // Read position = write position - delay length (circular)
-        let raw_read = self.write_pos as f64 - delay_samples;
-        self.read_pos_f = raw_read.rem_euclid(self.max_delay_samples as f64);
+        let raw_read = self.write_pos as f32 - delay_samples;
+        // euclidean modulo
+        let max = self.max_delay_samples_f32;
+        self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
+        self.read_pos_f = raw_read - max * (raw_read * self.inv_max_delay).floor();
     }
-
     /// Process one sample through the comb filter.
-    fn process_comb(&mut self, excitation: f64) -> Frame<f32, typenum::U1> {
+    fn process_comb(&mut self, excitation: f32) -> Frame<f32, typenum::U1> {
         if self.buffer.is_empty() {
             return [0.0].into();
         }
@@ -115,8 +116,8 @@ impl CombPluck {
         let idx1 = read_int as usize % self.max_delay_samples;
         let idx2 = (read_int as usize + 1) % self.max_delay_samples;
 
-        let delayed = self.buffer[idx1] as f64 * (1.0 - read_frac)
-            + self.buffer[idx2] as f64 * read_frac;
+        let delayed = self.buffer[idx1] * (1.0 - read_frac)
+            + self.buffer[idx2] * read_frac;
 
         let output = delayed;
         // todo: add polarity option
@@ -126,12 +127,13 @@ impl CombPluck {
         // Advance pointers
         self.write_pos = (self.write_pos + 1) % self.max_delay_samples;
         self.read_pos_f += 1.0;
-        if self.read_pos_f >= self.max_delay_samples as f64 {
-            self.read_pos_f -= self.max_delay_samples as f64;
-        }
+        if self.read_pos_f >= self.max_delay_samples as f32 {
+            self.read_pos_f -= self.max_delay_samples as f32;
+            }
         [output as f32].into()
+        }
     }
-}
+
 
 impl AudioNode for CombPluck {
     const ID: u64 = 67;
@@ -149,16 +151,16 @@ impl AudioNode for CombPluck {
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.sample_rate = sample_rate;
-        let duration_secs = self.max_delay_samples as f64 / self.sample_rate;
-        self.max_delay_samples = (duration_secs * sample_rate).ceil() as usize;
+        self.sample_rate = sample_rate as f32;
+        let duration_secs = self.max_delay_samples_f32 / self.sample_rate;
+        self.max_delay_samples = (duration_secs * self.sample_rate).ceil() as usize;
         self.max_delay_samples = Num::max(self.max_delay_samples, 2);
         self.reset();
     }
 
     #[inline]
     fn tick(&mut self, input: &Frame<f32, Self::Inputs>) -> Frame<f32, Self::Outputs> {
-        self.target_freq = input[0].max(0.0) as f64;
+        self.target_freq = input[0].max(0.0);
         let gate = input[1];
 
         // Gate rising edge detection (0→1 transition)
@@ -176,7 +178,7 @@ impl AudioNode for CombPluck {
     }
 }
 
-fn pluck_string_generic(feedback: f64, max_delay_seconds: f64, gain: f64) -> An<CombPluck> {
+fn pluck_string_generic(feedback: f32, max_delay_seconds: f32, gain: f32) -> An<CombPluck> {
     let feedback = feedback.clamp(0.0, 1.0);
     let max_delay_seconds = max_delay_seconds.clamp(0.0, 1.3);
     let gain = gain.clamp(0.0, 1.0);
