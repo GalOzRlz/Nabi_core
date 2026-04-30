@@ -16,10 +16,8 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
-
-use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, sound_builders::ProgramTable,
-};
+use midi_msg::ControlChange::CC;
+use crate::{NUM_MIDI_VALUES, SharedMidiState, SynthFunc, note_velocity_from, sound_builders::ProgramTable, control_change_from};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -76,6 +74,11 @@ impl SynthMsg {
     /// Returns MIDI note and velocity information if pertinent
     pub fn note_velocity(&self) -> Option<(u8, u8)> {
         note_velocity_from(&self.msg)
+    }
+
+    /// Returns a control message index and its value
+    pub fn control_change(&self) -> Option<(u8, u8)> {
+        control_change_from(&self.msg)
     }
 }
 
@@ -528,6 +531,10 @@ impl<const N: usize> MonoPlayer<N> {
                     };
                     self.change_synth(new_synth);
                     return Some(RelayedMessage::SynthChange);
+                }
+                ChannelVoiceMsg::ControlChange { control: CC { control, value } } => {
+                    for state in self.states.iter_mut() {
+                        state.set_control_change(*control, *value); }
                 }
                 _ => {}
             },
