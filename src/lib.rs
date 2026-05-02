@@ -39,8 +39,8 @@ use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
 use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
-use midi_msg::MidiMsg;
 use midi_msg::ControlChange::CC;
+use midi_msg::MidiMsg;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -162,7 +162,7 @@ impl SharedMidiState {
 
     /// get a control change value based on its data index
     pub fn control_change_var(&self, idx: usize) -> An<Var> {
-    var(&self.control_change[idx])
+        var(&self.control_change[idx])
     }
 
     /// Encodes a MIDI `Note On` event.
@@ -190,9 +190,10 @@ impl SharedMidiState {
 /// the control id and value values of that message.
 pub fn control_change_from(msg: &MidiMsg) -> Option<(u8, u8)> {
     if let MidiMsg::ChannelVoice {
-        msg: midi_msg::ChannelVoiceMsg::ControlChange {
-            control: CC { control, value },
-        },
+        msg:
+            midi_msg::ChannelVoiceMsg::ControlChange {
+                control: CC { control, value },
+            },
         ..
     } = msg
     {

@@ -3,8 +3,14 @@ use std::sync::Arc;
 use crate::sound_builders::{Adsr, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
-use fundsp::prelude::{AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz};
-use fundsp::prelude64::{dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, soft_saw, square, triangle, var, adsr_live, clip, follow, lowpass_q, product, constant};
+use fundsp::prelude::{
+    AudioUnit, U2, brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass,
+    resonator_hz,
+};
+use fundsp::prelude64::{
+    adsr_live, clip, constant, dsf_saw, dsf_square, follow, highpass_hz, lowpass_q, organ, product,
+    pulse, saw, shared, sine, soft_saw, square, triangle, var,
+};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -316,17 +322,17 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let a4 = 0.100;
     let gate = state.control_var();
 
-    let modes = (mul(1.000)
+    let modes = mul(1.000)
         >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
         & (mul(2.756) >> sine() * a1)
-        * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
         & (mul(5.404) >> sine() * a2)
-        * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release))
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release))
         & (mul(8.933) >> sine() * a3)
-        * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release))
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release))
         & (mul(13.34) >> sine() * a4)
-        * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release))
-        >> dcblock::<f64>());
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release))
+            >> dcblock::<f64>();
 
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
     let body = (pass() * 0.4)
@@ -337,9 +343,10 @@ pub fn music_box(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     // set cutoff stream with smoothing
     let cutoff_val = state.control_change_var(74);
     let max_cutoff_hz = 5_000.0;
-    let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0) ;
-    let cutoff_hrz = product(constant(max_cutoff_hz/127.0), cutoff_val);
-    let synth =
-        Box::new((combined | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock::<f64>() >> clip());
+    let combined = tone >> body >> highpass_hz(30.0, 0.7) * db_amp(-4.0);
+    let cutoff_hrz = product(constant(max_cutoff_hz / 127.0), cutoff_val);
+    let synth = Box::new(
+        (combined | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock::<f64>() >> clip(),
+    );
     state.assemble_unpitched_sound(synth, synth_adsr.boxed(state))
 }
