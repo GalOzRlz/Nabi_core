@@ -21,6 +21,8 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
+use fundsp::prelude64::{pass, sink, U2};
+use fundsp::prelude::{join, split, U1};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -289,8 +291,8 @@ impl<const N: usize> StereoPlayer<N> {
 
     fn sound(&self) -> Net {
         Net::stack(
-            self.sounds[Speaker::Left.i()].sound(),
-            self.sounds[Speaker::Right.i()].sound(),
+            self.sounds[Speaker::Left.i()].sound() >> split::<U2>() >> (sink() | pass()) >> join::<U1>(),
+            self.sounds[Speaker::Right.i()].sound() >> split::<U2>() >> (pass() | sink()) >> join::<U1>(),
         )
     }
 
