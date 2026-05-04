@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use crate::sound_builders::{Adsr, ProgramTable, simple_sound};
+use crate::sound_builders::{Adsr, IntoSpeakerDef, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
 use fundsp::prelude::{

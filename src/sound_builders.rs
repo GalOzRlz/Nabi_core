@@ -4,6 +4,7 @@ use fundsp::{
     prelude::AudioUnit,
     prelude64::{adsr_live, envelope2, moog_q},
 };
+use std::sync::Arc;
 
 use crate::{SharedMidiState, SynthFunc};
 
@@ -11,14 +12,75 @@ use crate::{SharedMidiState, SynthFunc};
 /// Convenience macro to build a `ProgramTable`. Given a sequence of tuples of `&str` objects
 /// and `SynthFunc` objects, it returns a proper `ProgramTable`.
 macro_rules! program_table {
-    ($( ($s:expr, $f:expr)),* ) => {vec![$(($s.to_owned(), Arc::new($f)),)*]}
+    ($( ($name:expr, $def:expr) ),* $(,)?) => {
+        ProgramTable::new(vec![
+            $( ($name.to_owned(), $def.into_speaker_def()) ),*
+        ])
+    };
 }
 
 /// Maximum number of entries controllable via MIDI messages in a MIDI program table.
 pub const NUM_PROGRAM_SLOTS: usize = 2_usize.pow(7);
 
 /// Convenience type alias for MIDI program tables.
-pub type ProgramTable = Vec<(String, SynthFunc)>;
+// pub type ProgramTable = Vec<(String, SynthFunc)>;
+
+#[derive(Clone)]
+pub enum SpeakerDef {
+    Mono(SynthFunc),
+    Stereo { left: SynthFunc, right: SynthFunc },
+}
+
+// Single function → Mono
+pub trait IntoSpeakerDef {
+    fn into_speaker_def(self) -> SpeakerDef;
+}
+
+// Tuple of two functions → Stereo
+// For any single function/closure that can be turned into a SynthFunc
+impl<F> IntoSpeakerDef for F
+where
+    F: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
+{
+    fn into_speaker_def(self) -> SpeakerDef {
+        SpeakerDef::Mono(Arc::new(self)) // wrap into SynthFunc
+    }
+}
+
+// For a tuple of two such functions – stereo definition
+impl<L, R> IntoSpeakerDef for (L, R)
+where
+    L: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
+    R: Fn(&SharedMidiState) -> Box<dyn AudioUnit> + Send + Sync + 'static,
+{
+    fn into_speaker_def(self) -> SpeakerDef {
+        SpeakerDef::Stereo {
+            left: Arc::new(self.0),
+            right: Arc::new(self.1),
+        }
+    }
+}
+pub type ProgramTableItem = (String, SpeakerDef);
+
+pub struct ProgramTable {
+    pub entries: Vec<ProgramTableItem>,
+}
+
+impl ProgramTable {
+    pub fn new(entries: Vec<ProgramTableItem>) -> Self {
+        Self { entries }
+    }
+
+    pub fn to_iter_mono(&self) -> impl Iterator<Item = (&str, SynthFunc)> {
+        self.entries.iter().map(|(name, def)| {
+            let func = match def {
+                SpeakerDef::Mono(f) => f,
+                SpeakerDef::Stereo { left, .. } => left,
+            };
+            (name.as_str(), func.clone())
+        })
+    }
+}
 
 /// Pipes a pitch into `synth`, then modulates the output volume depending on MIDI status.
 pub fn simple_sound(state: &SharedMidiState, synth: Box<dyn AudioUnit>) -> Box<dyn AudioUnit> {

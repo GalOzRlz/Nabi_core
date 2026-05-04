@@ -41,7 +41,9 @@ fn run_chooser(
             0 => {
                 let program = {
                     let program_table = program_table.lock().unwrap();
-                    console_choice_from("Change synth to", &program_table, |opt| opt.0.as_str())
+                    console_choice_from("Change synth to", &program_table.entries, |opt| {
+                        opt.0.as_str()
+                    })
                 };
                 midi_msgs.push(SynthMsg::program_change(program as u8, Speaker::Both));
             }

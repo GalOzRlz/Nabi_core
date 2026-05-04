@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use midi_fundsp::sound_builders::*;
 use midi_fundsp::{
     io::{Speaker, SynthMsg, get_first_midi_device, start_midi_input_thread, start_output_thread},
     program_table,

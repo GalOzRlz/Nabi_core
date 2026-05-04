@@ -2,8 +2,12 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use midi_fundsp::sound_builders::*;
 use midi_fundsp::{
-    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning}, program_table, sounds::music_box, tunings::just_intonation
+    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning},
+    program_table,
+    sounds::music_box,
+    tunings::just_intonation,
 };
 use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
@@ -22,4 +26,3 @@ fn main() -> anyhow::Result<()> {
     input::<String>().msg("Press any key to exit\n").get();
     Ok(())
 }
-
