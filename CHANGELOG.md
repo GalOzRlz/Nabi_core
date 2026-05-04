@@ -1,5 +1,8 @@
 # 0.8.0
   * Updated to `cpal 0.17.3`, `midir 0.11.0`, `midi-msg 0.8.2`
+  * Contributions from @GalOzRlz:
+    * Added an array representing every current MIDI Control Change channel value. This enables sounds to vary as MIDI Control Change messages are sent. The `MusicBox` sound in `sounds.rs` demonstrates this.
+    * Added Just Intonation option.
 
 # 0.7.2
   * Updated to `anyhow 1.0.102` and `bare_metal_modulo 1.2.6`
