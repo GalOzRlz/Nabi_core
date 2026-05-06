@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midi_fundsp::sound_builders::*;
+use midi_fundsp::config::{Config, VoiceStealingConfig};
 use midi_fundsp::{
     io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning},
     program_table,
@@ -13,6 +14,8 @@ use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
 
 fn main() -> anyhow::Result<()> {
+    let mut config = Config::default();
+    config.voice_stealing = VoiceStealingConfig::Latest;
     let mut midi_in = MidiInput::new("midir reading input")?;
     let in_port = get_first_midi_device(&mut midi_in)?;
     let midi_msgs = Arc::new(SegQueue::new());
@@ -22,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         midi_msgs,
         Arc::new(Mutex::new(program_table![("Music Box", music_box::<7>)])),
         just_intonation,
+        Some(config),
     );
     input::<String>().msg("Press Enter to exit\n").get();
     Ok(())

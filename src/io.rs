@@ -22,6 +22,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
+use crate::config::{Config, VoiceStealingConfig};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -185,9 +186,10 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
+    config: Option<Config>,
 ) {
     std::thread::spawn(move || {
-        let mut player = StereoPlayer::<N>::new(program_table);
+        let mut player = StereoPlayer::<N>::new(program_table, config);
         player.run_output(midi_msgs).unwrap();
     });
 }
@@ -205,8 +207,9 @@ pub fn start_output_thread<const N: usize>(
 pub fn start_midi_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
+    config: Option<Config>,
 ) {
-    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table));
+    inner_start_output_thread(midi_msgs,  StereoPlayer::<N>::new(program_table, config));
 }
 
 /// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
@@ -226,8 +229,9 @@ pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
     midi_to_hz: fn(f32) -> f32,
+    config: Option<Config>,
 ) {
-    let mut player = StereoPlayer::<N>::new(program_table);
+    let mut player =  StereoPlayer::<N>::new(program_table, config);
     player.set_midi_to_hz(midi_to_hz);
     inner_start_output_thread(midi_msgs, player);
 }
@@ -254,6 +258,18 @@ fn inner_start_output_thread<const N: usize>(
     });
 }
 
+/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
+fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
+    match def {
+        SpeakerDef::Mono(v) => v,
+        SpeakerDef::Stereo { right, left } => match speaker {
+            Speaker::Left => left,
+            Speaker::Right => right,
+            Speaker::Both => unreachable!(),
+        },
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Represents whether a sound should go to the left, right, or both speakers.
 pub enum Speaker {
@@ -273,23 +289,12 @@ struct StereoPlayer<const N: usize> {
     sounds: [SingleSpeakerPlayer<N>; 2],
 }
 
-/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
-fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
-    match def {
-        SpeakerDef::Mono(v) => v,
-        SpeakerDef::Stereo { right, left } => match speaker {
-            Speaker::Left => left,
-            Speaker::Right => right,
-            Speaker::Both => unreachable!(),
-        },
-    }
-}
-
 impl<const N: usize> StereoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Option<Config>) -> Self {
+        let config = config.unwrap_or_else(|| Config::default());
         let sounds = [
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left),
-            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right),
+            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left, config.clone()),
+            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right, config.clone()),
         ];
         Self { sounds }
     }
@@ -488,10 +493,11 @@ struct SingleSpeakerPlayer<const N: usize> {
     master_volume: Shared,
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
+    config: Config
 }
 
 impl<const N: usize> SingleSpeakerPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker) -> Self {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: Config) -> Self {
         let synth_func = {
             let program_table = program_table.lock().unwrap();
             def_to_synth(&speaker, program_table.entries[0].1.clone())
@@ -505,6 +511,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
             synth_func,
             master_volume: shared(1.0),
             program_table,
+            config,
         }
     }
 
@@ -580,6 +587,10 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
                 return self.claim_state(i);
             }
         }
+        self.next = match self.config.voice_stealing {
+            VoiceStealingConfig::Oldest => self.next,
+            VoiceStealingConfig::Latest => ModNumC::new(self.next.a() + (N -1))
+        };
         self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
         self.release(self.next.a());
         self.claim_state(self.next)

@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());
     let stereo_msgs = Arc::new(SegQueue::new());
     stereo_msgs.push(SynthMsg::program_change(1, Speaker::Left));
-    start_output_thread::<10>(stereo_msgs.clone(), stereo_table);
+    start_output_thread::<10>(stereo_msgs.clone(), stereo_table, None);
 
     println!("Play notes at will.");
     println!(

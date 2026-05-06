@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     let outputs = Arc::new(SegQueue::new());
     start_input_thread(inputs.clone(), midi_in, in_port, reset.clone());
     let program_table = Arc::new(Mutex::new(options()));
-    start_output_thread::<10>(outputs.clone(), program_table.clone());
+    start_output_thread::<10>(outputs.clone(), program_table.clone(), None);
     std::thread::spawn(move || {
         loop {
             if let Some(msg) = inputs.pop() {

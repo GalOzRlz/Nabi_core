@@ -20,6 +20,7 @@ fn main() -> anyhow::Result<()> {
         midi_msgs,
         Arc::new(Mutex::new(options())),
         well_temperament,
+        None,
     );
     input::<String>().msg("Press any key to exit\n").get();
     Ok(())
