@@ -22,6 +22,8 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
+use fundsp::prelude::{multipass, reverb2_stereo, U2};
+use fundsp::prelude64::{lowpole_hz, reverb_stereo, split};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -269,8 +271,8 @@ impl Speaker {
     }
 }
 
-struct StereoPlayer<const N: usize> {
-    sounds: [SingleSpeakerPlayer<N>; 2],
+struct StereoPlayer<const N: usize> { // todo: Make LR player and StereoPlayer with shared methods
+    center_player: SingleSpeakerPlayer<N>
 }
 
 /// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
@@ -287,25 +289,19 @@ fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
 
 impl<const N: usize> StereoPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
-        let sounds = [
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left),
-            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right),
-        ];
-        Self { sounds }
+        let center_player =
+            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Both);
+        Self { center_player }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
-        for i in 0..self.sounds.len() {
-            self.sounds[i].set_midi_to_hz(midi_to_hz);
-        }
+        self.center_player.set_midi_to_hz(midi_to_hz);
     }
 
     fn sound(&self) -> Net {
-        Net::stack(
-            self.sounds[Speaker::Left.i()].sound(),
-            self.sounds[Speaker::Right.i()].sound(),
-        )
+        self.center_player.sound()
     }
+
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
         let host = cpal::default_host();
@@ -322,16 +318,7 @@ impl<const N: usize> StereoPlayer<N> {
     }
 
     fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
-        match speaker {
-            Speaker::Left | Speaker::Right => self.sounds[speaker.i()].decode(msg),
-            Speaker::Both => {
-                let mut result = None;
-                for sound in self.sounds.iter_mut() {
-                    result = result.or(sound.decode(msg));
-                }
-                result
-            }
-        }
+        self.center_player.decode(msg)
     }
 
     fn run_synth<T: Sample + SizedSample + FromSample<f32>>(
@@ -517,13 +504,22 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
     fn sound(&self) -> Net {
         let mut sound = Net::wrap(self.sound_at(0));
         for i in 1..N {
-            sound = Net::binary(sound, Net::wrap(self.sound_at(i)), FrameAdd::new());
+            sound = sound + Net::wrap(self.sound_at(i));
         }
-        Net::binary(
-            sound,
-            Net::wrap(Box::new(var(&self.master_volume))),
-            FrameMul::new(),
-        )
+        match sound.outputs() {
+            1 => {
+                let vol = var(&self.master_volume) >> split::<U2>();
+                let mix = sound >> split::<U2>() >> (multipass() & 0.2 * reverb_stereo(10.0, 5.0, 0.5));
+                mix * vol
+            }
+            2 => {
+                // todo: wrap in BUS effects function that reads a config? forget about this and manage all in the instrument? only focus on compression drive/clipping and limiting?
+                let vol = var(&self.master_volume);   // assuming var is already 2ch
+                let mix = sound >> (multipass() & 0.2 * reverb_stereo(10.0, 5.0, 0.5));
+                mix * vol
+            }
+            _ => panic!("Unsupported channel count on synth! use either 1 or 2"),
+        }
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
