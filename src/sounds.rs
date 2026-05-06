@@ -343,10 +343,10 @@ pub fn wide_chorus_guitarish_r(state: &SharedMidiState) -> Box<dyn AudioUnit> {
 /// Something between a celesta and a prepared-piano with filter cutoff mapped to specified midi CC constant
 pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit> {
     let synth_adsr = Adsr {
-        attack: 0.002,
-        decay: 0.0,
-        sustain: 1.0,
-        release: 0.6,
+        attack: 0.003,
+        decay: 0.6,
+        sustain: 0.8,
+        release: 0.01,
     };
     let a1 = 0.600;
     let a2 = 0.350;
@@ -355,7 +355,7 @@ pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit>
     let gate = state.control_var();
 
     let modes = mul(1.000)
-        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
+        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.3, synth_adsr.release))
         & (mul(2.756) >> sine() * a1)
             * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
         & (mul(5.404) >> sine() * a2)
