@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midi_fundsp::sound_builders::*;
-use midi_fundsp::config::{Config, VoiceStealingConfig};
+use midi_fundsp::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
 use midi_fundsp::{
     io::{get_first_midi_device, start_midi_input_thread},
     program_table,
@@ -15,7 +15,8 @@ use midi_fundsp::io::start_midi_output_thread;
 
 fn main() -> anyhow::Result<()> {
     let mut config = Config::default();
-    config.voice_stealing = VoiceStealingConfig::Last;
+    config.voice_stealing = VoiceStealingConfig::LegatoLast;
+    config.voice_release = FreeVoiceStrategy::ReleaseOnZero;
     let mut midi_in = MidiInput::new("midir reading input")?;
     let in_port = get_first_midi_device(&mut midi_in)?;
     let midi_msgs = Arc::new(SegQueue::new());

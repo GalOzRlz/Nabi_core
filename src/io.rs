@@ -22,7 +22,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{InputBuild, shortcut::input};
 use std::sync::{Arc, Mutex};
-use crate::config::{Config, VoiceStealingConfig};
+use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -305,13 +305,12 @@ impl<const N: usize> StereoPlayer<N> {
         }
     }
 
-    fn sound(&self) -> Net {
+    fn sound(&mut self) -> Net {
         Net::stack(
             self.sounds[Speaker::Left.i()].sound(),
             self.sounds[Speaker::Right.i()].sound(),
         )
     }
-
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
         let host = cpal::default_host();
         let device = host
@@ -391,7 +390,7 @@ impl<const N: usize> StereoPlayer<N> {
     }
 
     fn get_stream<T: Sample + SizedSample + FromSample<f32>>(
-        &self,
+        &mut self,
         config: &StreamConfig,
         device: &Device,
     ) -> anyhow::Result<Stream> {
@@ -412,6 +411,11 @@ impl<const N: usize> StereoPlayer<N> {
                 None,
             )
             .or_else(|err| bail!("{err:?}"))
+    }
+
+    pub fn set_new_config(&mut self, config: Config) {
+        self.sounds[Speaker::Right.i()].set_new_config(config.clone());
+        self.sounds[Speaker::Left.i()].set_new_config(config);
     }
 }
 
@@ -521,10 +525,28 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         }
     }
 
-    fn sound(&self) -> Net {
+    fn set_new_config(&mut self, new_config: Config) {
+        self.config = new_config;
+    }
+
+    fn nullify_zero_value_notes(&mut self, sound: &mut Net, i:usize) -> bool {
+        let sample = sound.get_mono();
+        if sample == 0_f32 {
+            self.release(i);
+            return true
+        }
+        false
+    }
+    fn sound(&mut self) -> Net {
         let mut sound = Net::wrap(self.sound_at(0));
+        if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
+            self.nullify_zero_value_notes(&mut sound, 0);
+        }
         for i in 1..N {
             sound = Net::binary(sound, Net::wrap(self.sound_at(i)), FrameAdd::new());
+            if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
+                self.nullify_zero_value_notes(&mut sound, 0);
+            }
         }
         Net::binary(
             sound,
@@ -588,11 +610,10 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
             }
         }
         self.next = match self.config.voice_stealing {
-            VoiceStealingConfig::Oldest => self.next,
-            VoiceStealingConfig::Last => ModNumC::new(self.next.a() + (N -1))
+            VoiceStealingConfig::LegatoOldest => self.next,
+            VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N -1)),
+            VoiceStealingConfig::LastRetrigger | VoiceStealingConfig::OldestRetrigger => todo!()
         };
-        self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
-        self.release(self.next.a());
         self.claim_state(self.next)
     }
 
@@ -605,7 +626,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
     fn on(&mut self, pitch: u8, velocity: u8) {
         self.master_volume.set_value(1.0);
         let selected = self.find_next_state();
-        self.states[selected].on(pitch, velocity);
+        self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
     }
@@ -636,7 +657,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
 
     fn release(&mut self, i: usize) {
         self.recent_pitches[i] = None;
-        self.states[i].off();
+        self.states[i].note_off();
     }
 
     fn release_all(&mut self) {
