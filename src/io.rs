@@ -11,8 +11,8 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::{multipass, U2};
-use fundsp::prelude64::{reverb_stereo, split};
+use fundsp::prelude::U2;
+use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
     prelude::AudioUnit,
@@ -384,18 +384,18 @@ trait DubleSpeaker<const N: usize> {
 }
 
 struct StereoPlayer<const N: usize> {
-    center_source: SingleSpeakerPlayer<N>
+    center_source: SingleSourcePlayer<N>
 }
 
 struct LRPlayer<const N: usize> {
-    sounds: [SingleSpeakerPlayer<N>; 2],
+    sounds: [SingleSourcePlayer<N>; 2],
 }
 /// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
         let center_source =
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Both);
+            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both);
         Self { center_source }
     }
 
@@ -416,8 +416,8 @@ impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
 impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
         let sounds = [
-            SingleSpeakerPlayer::<N>::new(program_table.clone(), Speaker::Left),
-            SingleSpeakerPlayer::<N>::new(program_table, Speaker::Right),
+            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Left),
+            SingleSourcePlayer::<N>::new(program_table, Speaker::Right),
         ];
         Self { sounds }
     }
@@ -521,7 +521,7 @@ enum RelayedMessage {
 }
 
 #[derive(Clone)]
-struct SingleSpeakerPlayer<const N: usize> {
+struct SingleSourcePlayer<const N: usize> {
     states: [SharedMidiState; N],
     next: ModNumC<usize, N>,
     pitch2state: [Option<usize>; NUM_MIDI_VALUES],
@@ -532,7 +532,7 @@ struct SingleSpeakerPlayer<const N: usize> {
     speaker: Speaker,
 }
 
-impl<const N: usize> SingleSpeakerPlayer<N> {
+impl<const N: usize> SingleSourcePlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker) -> Self {
         let synth_func = {
             let program_table = program_table.lock().unwrap();
@@ -564,16 +564,13 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
         match sound.outputs() {
             1 => {
                 let vol = var(&self.master_volume) >> split::<U2>();
-                let mix = sound >> split::<U2>() >> (multipass() & 0.2 * reverb_stereo(10.0, 5.0, 0.5));
-                mix * vol
+                sound * vol
             }
             2 => {
-                // todo: wrap in BUS effects function that reads a config? forget about this and manage all in the instrument? only focus on compression drive/clipping and limiting?
-                let vol = var(&self.master_volume);   // assuming var is already 2ch
-                let mix = sound >> (multipass() & 0.2 * reverb_stereo(10.0, 5.0, 0.5));
-                mix * vol
+                let vol = var(&self.master_volume);
+                sound * vol
             }
-            _ => panic!("Unsupported channel count on synth! use either 1 or 2"),
+            _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         }
     }
 
