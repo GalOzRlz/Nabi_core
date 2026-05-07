@@ -1,29 +1,29 @@
 use crate::sound_builders::SpeakerDef;
 use crate::{
-    NUM_MIDI_VALUES, SharedMidiState, SynthFunc, control_change_from, note_velocity_from,
-    sound_builders::ProgramTable,
+    control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
+    NUM_MIDI_VALUES,
 };
 use anyhow::{anyhow, bail};
 use bare_metal_modulo::*;
 use cpal::{
-    Device, FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait}, Device, FromSample, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
+use fundsp::prelude::{multipass, U2};
+use fundsp::prelude64::{reverb_stereo, split};
 use fundsp::{
     net::Net,
-    prelude::{AudioUnit, FrameAdd, FrameMul},
+    prelude::AudioUnit,
     prelude64::{shared, var},
     shared::Shared,
 };
 use midi_msg::ControlChange::CC;
 use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTimeMsg};
 use midir::{Ignore, MidiInput, MidiInputPort};
-use read_input::{InputBuild, shortcut::input};
+use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use fundsp::prelude::{multipass, reverb2_stereo, U2};
-use fundsp::prelude64::{lowpole_hz, reverb_stereo, split};
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -513,7 +513,6 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
                 mix * vol
             }
             2 => {
-                // todo: wrap in BUS effects function that reads a config? forget about this and manage all in the instrument? only focus on compression drive/clipping and limiting?
                 let vol = var(&self.master_volume);   // assuming var is already 2ch
                 let mix = sound >> (multipass() & 0.2 * reverb_stereo(10.0, 5.0, 0.5));
                 mix * vol
