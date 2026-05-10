@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
         while reset.load() {}
         start_input_thread(incoming_msgs.clone(), midi_in, in_port, reset.clone());
         let program_table = Arc::new(Mutex::new(options()));
-        start_output_thread::<10>(outgoing_msgs.clone(), program_table.clone());
+        start_output_thread::<10>(outgoing_msgs.clone(), program_table.clone(), None);
         run_midi_show_thread(incoming_msgs, outgoing_msgs.clone());
         run_chooser(
             outgoing_msgs,

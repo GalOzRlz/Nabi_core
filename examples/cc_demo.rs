@@ -25,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         outgoing_msgs,
         Arc::new(Mutex::new(program_table![("Music Box", music_box::<7>)])),
         just_intonation,
+        None,
     );
     input::<String>().msg("Press Enter to exit\n").get();
     Ok(())

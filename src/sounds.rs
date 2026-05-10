@@ -355,7 +355,7 @@ pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit>
     let gate = state.control_var();
 
     let modes = mul(1.000)
-        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.0, synth_adsr.release))
+        >> sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.3, synth_adsr.release))
         & (mul(2.756) >> sine() * a1)
             * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))
         & (mul(5.404) >> sine() * a2)

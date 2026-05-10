@@ -37,6 +37,7 @@ pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
+pub mod config;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -173,8 +174,8 @@ impl SharedMidiState {
         var(&self.control_change[idx])
     }
 
-    /// Encodes a MIDI `Note On` event.
-    pub fn on(&self, pitch: u8, velocity: u8) {
+    /// Encodes a MIDI `Note On` event as a positive gate signal
+    pub fn note_on(&self, pitch: u8, velocity: u8) {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));
         self.velocity
             .set_value(velocity as f32 / MAX_MIDI_VALUE as f32);
@@ -182,7 +183,7 @@ impl SharedMidiState {
     }
 
     /// Encodes a MIDI `Note Off` event.
-    pub fn off(&self) {
+    pub fn note_off(&self) {
         self.control.set_value(CONTROL_OFF);
     }
 
@@ -299,7 +300,7 @@ impl SoundTestResult {
         sound.set_sample_rate(SAMPLE_RATE);
         let mut next_value = move || sound.get_mono();
         let start = Instant::now();
-        state.on(60, 127);
+        state.note_on(60, 127);
         while start.elapsed().as_secs_f64() < DURATION {
             result.add_value(next_value());
             std::thread::sleep(Duration::from_secs_f64(SLEEP_TIME));
