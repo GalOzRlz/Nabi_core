@@ -24,6 +24,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use crate::config::Config;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -85,6 +86,18 @@ impl SynthMsg {
     /// Returns a control message index and its value
     pub fn control_change(&self) -> Option<(u8, u8)> {
         control_change_from(&self.msg)
+    }
+}
+
+/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
+fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
+    match def {
+        SpeakerDef::Stereo(v) => v,
+        SpeakerDef::LR { right, left } => match speaker {
+            Speaker::Left => left,
+            Speaker::Right => right,
+            Speaker::Both => unreachable!(),
+        },
     }
 }
 
@@ -187,10 +200,11 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
+    config: Option<Config>,
 ) {
-    // todo: read config and decide which player to use
+    let cnf = config.unwrap_or_else(|| Config::default());
     std::thread::spawn(move || {
-        let mut player = StereoPlayer::<N>::new(program_table);
+        let mut player = StereoPlayer::<N>::new(program_table, cnf);
         player.run_output(midi_msgs).unwrap();
     });
 }
@@ -208,8 +222,10 @@ pub fn start_output_thread<const N: usize>(
 pub fn start_midi_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
+    config: Option<Config>,
 ) {
-    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table));
+    let cnf = config.unwrap_or_else(|| Config::default());
+    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table, cnf));
 }
 
 /// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
@@ -229,8 +245,10 @@ pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
     program_table: Arc<Mutex<ProgramTable>>,
     midi_to_hz: fn(f32) -> f32,
+    config: Option<Config>,
 ) {
-    let mut player = StereoPlayer::<N>::new(program_table);
+    let cnf = config.unwrap_or_else(|| Config::default());
+    let mut player = StereoPlayer::<N>::new(program_table, cnf);
     player.set_midi_to_hz(midi_to_hz);
     inner_start_output_thread(midi_msgs, player);
 }
@@ -257,18 +275,6 @@ fn inner_start_output_thread<const N: usize>(
     });
 }
 
-fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
-    match def {
-        SpeakerDef::Stereo(v) => v,
-        SpeakerDef::LR { right, left } => match speaker {
-            Speaker::Left => left,
-            Speaker::Right => right,
-            Speaker::Both => panic!("You require a L/R sound engine (different synth function for L/R) but also asked for a true stereo setup:\
-             either provide a SpeakerDef::Stereo enum or change the player configuration to LRPlayer"),
-        },
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Represents whether a sound should go to the left, right, or both speakers.
 pub enum Speaker {
@@ -285,7 +291,7 @@ impl Speaker {
 }
 trait DubleSpeaker<const N: usize> {
 
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self;
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self;
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
@@ -384,19 +390,21 @@ trait DubleSpeaker<const N: usize> {
 }
 
 struct StereoPlayer<const N: usize> {
-    center_source: SingleSourcePlayer<N>
+    center_source: SingleSourcePlayer<N>,
+    config: Config,
 }
 
 struct LRPlayer<const N: usize> {
     sounds: [SingleSourcePlayer<N>; 2],
+    config: Config,
 }
 /// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
         let center_source =
             SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both);
-        Self { center_source }
+        Self { center_source, config }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
@@ -414,12 +422,12 @@ impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
 }
 
 impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>) -> Self {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
         let sounds = [
             SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Left),
             SingleSourcePlayer::<N>::new(program_table, Speaker::Right),
         ];
-        Self { sounds }
+        Self { sounds, config }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
@@ -642,7 +650,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
     fn on(&mut self, pitch: u8, velocity: u8) {
         self.master_volume.set_value(1.0);
         let selected = self.find_next_state();
-        self.states[selected].on(pitch, velocity);
+        self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
     }
@@ -673,7 +681,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
 
     fn release(&mut self, i: usize) {
         self.recent_pitches[i] = None;
-        self.states[i].off();
+        self.states[i].note_off();
     }
 
     fn release_all(&mut self) {
