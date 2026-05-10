@@ -395,11 +395,6 @@ struct StereoPlayer<const N: usize> {
     center_source: SingleSourcePlayer<N>,
 }
 
-/// A more expensive player that can accept a program table with dedicated L/R channel Synth Functions
-pub struct LRPlayer<const N: usize> {
-    sounds: [SingleSourcePlayer<N>; 2],
-}
-
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
         let center_source =
@@ -418,42 +413,6 @@ impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn decode(&mut self, _speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
         let result = None;
         result.or(self.center_source.decode(msg))
-    }
-}
-
-impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
-        let sounds = [
-            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Left, config.clone()),
-            SingleSourcePlayer::<N>::new(program_table, Speaker::Right, config),
-        ];
-        Self { sounds }
-    }
-
-    fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
-        for i in 0..self.sounds.len() {
-            self.sounds[i].set_midi_to_hz(midi_to_hz);
-        }
-    }
-
-    fn sound(&mut self) -> Net {
-        Net::stack(
-            self.sounds[Speaker::Left.i()].sound(),
-            self.sounds[Speaker::Right.i()].sound(),
-        )
-    }
-
-    fn decode(&mut self, speaker: Speaker, msg: &MidiMsg) -> Option<RelayedMessage> {
-        match speaker {
-            Speaker::Left | Speaker::Right => self.sounds[speaker.i()].decode(msg),
-            Speaker::Both => {
-                let mut result = None;
-                for sound in self.sounds.iter_mut() {
-                    result = result.or(sound.decode(msg));
-                }
-                result
-            }
-        }
     }
 }
 
