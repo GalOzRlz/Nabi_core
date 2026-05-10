@@ -29,5 +29,4 @@ impl Default for Config {
             voice_release: FreeVoiceStrategy::ReleaseOnZero,
         }
     }
-
 }

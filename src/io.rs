@@ -1,3 +1,5 @@
+use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use crate::effects::master_reverb;
 use crate::sound_builders::SpeakerDef;
 use crate::{
     control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
@@ -24,7 +26,6 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use crate::config::Config;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -295,7 +296,7 @@ trait DubleSpeaker<const N: usize> {
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
-    fn sound(&self) -> Net;
+    fn sound(&mut self) -> Net;
 
     fn run_output(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> anyhow::Result<()> {
         let host = cpal::default_host();
@@ -364,7 +365,7 @@ trait DubleSpeaker<const N: usize> {
     }
 
     fn get_stream<T: Sample + SizedSample + FromSample<f32>>(
-        &self,
+        &mut self,
         config: &StreamConfig,
         device: &Device,
     ) -> anyhow::Result<Stream> {
@@ -389,29 +390,28 @@ trait DubleSpeaker<const N: usize> {
 
 }
 
+/// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
 struct StereoPlayer<const N: usize> {
     center_source: SingleSourcePlayer<N>,
-    config: Config,
 }
 
-struct LRPlayer<const N: usize> {
+/// A more expensive player that can accept a program table with dedicated L/R channel Synth Functions
+pub struct LRPlayer<const N: usize> {
     sounds: [SingleSourcePlayer<N>; 2],
-    config: Config,
 }
-/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
         let center_source =
-            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both);
-        Self { center_source, config }
+            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both, config);
+        Self { center_source }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         self.center_source.set_midi_to_hz(midi_to_hz);
     }
 
-    fn sound(&self) -> Net {
+    fn sound(&mut self) -> Net {
         self.center_source.sound()
     }
 
@@ -424,10 +424,10 @@ impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
 impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
     fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
         let sounds = [
-            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Left),
-            SingleSourcePlayer::<N>::new(program_table, Speaker::Right),
+            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Left, config.clone()),
+            SingleSourcePlayer::<N>::new(program_table, Speaker::Right, config),
         ];
-        Self { sounds, config }
+        Self { sounds }
     }
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
@@ -436,7 +436,7 @@ impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
         }
     }
 
-    fn sound(&self) -> Net {
+    fn sound(&mut self) -> Net {
         Net::stack(
             self.sounds[Speaker::Left.i()].sound(),
             self.sounds[Speaker::Right.i()].sound(),
@@ -455,9 +455,6 @@ impl<const N: usize> DubleSpeaker<N> for LRPlayer<N> {
             }
         }
     }
-
-
-
 }
 
 /// Presents a list of items to be selected via console input. Used in multiple
@@ -528,6 +525,7 @@ enum RelayedMessage {
     SystemReset,
 }
 
+/// Single sound emitter that decodes midi and manages voices - used by StereoPlayer and LRPlayer to manage output.
 #[derive(Clone)]
 struct SingleSourcePlayer<const N: usize> {
     states: [SharedMidiState; N],
@@ -538,10 +536,11 @@ struct SingleSourcePlayer<const N: usize> {
     master_volume: Shared,
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
+    config: Config,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker) -> Self {
+    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: Config) -> Self {
         let synth_func = {
             let program_table = program_table.lock().unwrap();
             def_to_synth(&speaker, program_table.entries[0].1.clone())
@@ -555,6 +554,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             synth_func,
             master_volume: shared(1.0),
             program_table,
+            config
         }
     }
 
@@ -564,12 +564,26 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
     }
 
-    fn sound(&self) -> Net {
+    fn nullify_zero_value_notes(&mut self, sound: &mut Net, i:usize) -> bool {
+        let sample = sound.get_mono();
+        if sample == 0_f32 {
+            self.release(i);
+            return true
+        }
+        false
+    }
+    fn sound(&mut self) -> Net {
         let mut sound = Net::wrap(self.sound_at(0));
+        if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
+            self.nullify_zero_value_notes(&mut sound, 0);
+        }
         for i in 1..N {
             sound = sound + Net::wrap(self.sound_at(i));
+            if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
+                self.nullify_zero_value_notes(&mut sound, 0);
+            }
         }
-        match sound.outputs() {
+        let mix = match sound.outputs() {
             1 => {
                 let vol = var(&self.master_volume) >> split::<U2>();
                 sound * vol
@@ -579,7 +593,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 sound * vol
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
-        }
+        };
+        mix >> master_reverb(0.5)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -612,7 +627,6 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     for state in self.states.iter_mut() {
                         state.set_control_change(*control, *value);
                     }
-                    return Some(RelayedMessage::SynthChange);
                 }
                 _ => {}
             },
@@ -636,8 +650,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 return self.claim_state(i);
             }
         }
-        self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
-        self.release(self.next.a());
+        self.next = match self.config.voice_stealing {
+            VoiceStealingConfig::LegatoOldest => self.next,
+            VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N - 1)),
+        };
         self.claim_state(self.next)
     }
 
