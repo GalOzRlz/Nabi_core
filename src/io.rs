@@ -585,7 +585,7 @@ impl<const N: usize> SingleSpeakerPlayer<N> {
                     for state in self.states.iter_mut() {
                         state.set_control_change(*control, *value);
                     }
-                    return Some(RelayedMessage::SynthChange);
+                    // return Some(RelayedMessage::SynthChange);
                 }
                 _ => {}
             },
