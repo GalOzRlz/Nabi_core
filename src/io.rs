@@ -495,8 +495,10 @@ struct SingleSourcePlayer<const N: usize> {
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
     config: Config,
-    global_fx_val_1: usize,
-    global_fx_val_2: usize,
+    global_fx_cc_idx_1: usize,
+    global_fx_cc_idx_2: usize,
+    eq_low_cc_idx: usize,
+    eq_high_cc_idx: usize,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
@@ -512,11 +514,13 @@ impl<const N: usize> SingleSourcePlayer<N> {
             recent_pitches: [None; N],
             speaker,
             synth_func,
-            master_volume: shared(1.0),
+            master_volume: shared(0.5),
             program_table,
             config: config.clone(),
-            global_fx_val_1: config.cc_1,
-            global_fx_val_2: config.cc_2
+            global_fx_cc_idx_1: config.cc_1,
+            global_fx_cc_idx_2: config.cc_2,
+            eq_low_cc_idx: config.cc_3,
+            eq_high_cc_idx: config.cc_4,
         }
     }
 
@@ -557,10 +561,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         println!("=== Sound function called ===");
 
-        let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_val_1].clone())));
-
-        // mix >> reverb_stereo(5.0, 0.5, 0.5)
-        mix >> master_reverb(reverb_amount)
+        let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_cc_idx_1].clone())));
+        mix >> master_reverb(reverb_amount) // todo: add 2-banded eq > limiter/clipper > normalizer > reverb, make this into a function player holds?
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {

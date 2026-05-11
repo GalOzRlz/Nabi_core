@@ -15,7 +15,8 @@ pub fn master_reverb(wet_amount: Net) -> Net {
 
     (pass * dry_stereo) & (reverb * wet_stereo)
 }
-pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> An<Pipe<Pipe<Pipe<Stack<Pass, Pipe<Binop<FrameMul<fundsp::typenum::U1>, Constant<typenum::U1>, Var>, Follow<f64>>>, Pipe<Stack<MultiPass<U2>, Constant<U1>>, Svf<f64, LowpassMode<f64>>>>, DCBlock<f64>>, Shaper<Clip>>> {
-    let cutoff_hrz = product(constant(max_cutoff_hz / 127.0), cutoff_val);
-    (pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock() >> clip()
+
+pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
+    let cutoff_hrz = product(constant(max_cutoff_hz), cutoff_val);
+    Net::wrap(Box::new((pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(2.0) >> dcblock() >> clip()))
 }
