@@ -51,6 +51,7 @@ use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::ControlChange::CC;
 use midi_msg::MidiMsg;
+use crate::config::Config;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -84,14 +85,15 @@ pub struct SharedMidiState {
 
 impl Default for SharedMidiState {
     fn default() -> Self {
-        Self {
+         let s = Self {
             pitch: Default::default(),
             velocity: Default::default(),
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             control_change: core::array::from_fn(|_| Shared::new(0.0)),
-        }
+        };
+        s.with_config(Config::default())
     }
 }
 
@@ -109,6 +111,14 @@ impl Debug for SharedMidiState {
 }
 
 impl SharedMidiState {
+    pub fn with_config(self, config: Config) -> Self {
+        for (cc_num, start_val) in config.cc_mappings.into_iter().zip(config.cc_start_values.into_iter()) {
+            self.control_change[cc_num as usize].set_value(start_val);
+            println!("cc_num: {}, start_val: {}", cc_num, start_val);
+        }
+        self
+    }
+
     /// Changes how MIDI notes are converted to pitches. Defaults to equal temperament.
     pub fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32) {
         self.midi_to_hz = midi_to_hz;

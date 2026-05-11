@@ -31,13 +31,16 @@ pub fn simple_lowpass(cutoff_val: An<Var>, max_cutoff_hz: f32) -> Net {
 }
 
 pub fn master_lowpass(cc_idx: usize, shared_midi_state: &SharedMidiState,  q: f32) -> Net {
-    let cutoff = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
-    Net::wrap(Box::new((pass() | cutoff >> follow(0.05_f32)) >> lowpass_q(q)))
+    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
+    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> common_follow();
+    Net::wrap(Box::new((pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(q)))
 }
 
 pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState,  q: f32) -> Net {
-    let cutoff = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
-    Net::wrap(Box::new((pass() | cutoff >> follow(0.05_f32)) >> highpass_q(q)))}
+    let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
+    let cutoff_hrz = product(constant(20.0), cutoff_val) >> common_follow();
+    Net::wrap(Box::new((pass() | cutoff_hrz >> follow(0.05_f32)) >> highpass_q(q)))
+}
 
 pub fn master_reverb(global_fx_cc_idx_1: usize, shared_midi_state: &SharedMidiState) -> Net {
     let reverb_amount: Net = Net::wrap(Box::new(var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone()) >> common_follow()));

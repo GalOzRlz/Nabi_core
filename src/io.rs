@@ -514,13 +514,13 @@ impl<const N: usize> SingleSourcePlayer<N> {
             recent_pitches: [None; N],
             speaker,
             synth_func,
-            master_volume: shared(0.5),
+            master_volume: shared(0.15),
             program_table,
             config: config.clone(),
-            global_fx_cc_idx_1: config.cc_1,
-            global_fx_cc_idx_2: config.cc_2,
-            eq_low_cc_idx: config.cc_3,
-            eq_high_cc_idx: config.cc_4,
+            global_fx_cc_idx_1: config.cc_mappings[0],
+            global_fx_cc_idx_2: config.cc_mappings[1],
+            eq_low_cc_idx: config.cc_mappings[2],
+            eq_high_cc_idx: config.cc_mappings[3],
         }
     }
 
@@ -539,8 +539,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
         false
     }
     fn sound(&mut self) -> Net {
-        let lp = master_lowpass(self.eq_low_cc_idx.clone(), &self.states[0], 3.0);
-        let hp = master_highpass(self.eq_high_cc_idx.clone(), &self.states[0], 3.0);
+        let lp = master_lowpass(self.eq_low_cc_idx.clone(), &self.states[0], 1.0);
+        let hp = master_highpass(self.eq_high_cc_idx.clone(), &self.states[0], 5.0);
         let mut sound = Net::wrap(self.sound_at(0));
         if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
             self.nullify_zero_value_notes(&mut sound, 0);
@@ -553,10 +553,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
         let mix = match sound.outputs() {
             1 => {
-                (sound * var(&self.master_volume)) >> split::<U2>() 
+                (sound * var(&self.master_volume)) >> lp >> hp >>split::<U2>()
             }
             2 => {
-                let vol = var(&self.master_volume);
+                let vol = var(&self.master_volume) >> (lp.clone() | lp) >> (hp.clone() | hp);
                 sound * vol
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
