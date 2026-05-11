@@ -1,5 +1,5 @@
 use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
-use crate::effects::master_reverb;
+use crate::effects::{master_highpass, master_limiter, master_lowpass, master_reverb};
 use crate::sound_builders::SpeakerDef;
 use crate::{
     control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
@@ -539,6 +539,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
         false
     }
     fn sound(&mut self) -> Net {
+        let lp = master_lowpass(self.eq_low_cc_idx.clone(), &self.states[0], 3.0);
+        let hp = master_highpass(self.eq_high_cc_idx.clone(), &self.states[0], 3.0);
         let mut sound = Net::wrap(self.sound_at(0));
         if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
             self.nullify_zero_value_notes(&mut sound, 0);
@@ -561,8 +563,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         println!("=== Sound function called ===");
 
-        let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_cc_idx_1].clone())));
-        mix >> master_reverb(reverb_amount) // todo: add 2-banded eq > limiter/clipper > normalizer > reverb, make this into a function player holds?
+        mix >> master_limiter() >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
+        // todo: add 2-banded eq > rest of master
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
