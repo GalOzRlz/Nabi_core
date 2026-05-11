@@ -90,7 +90,7 @@ impl Default for SharedMidiState {
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
-            control_change: core::array::from_fn(|_| Shared::new(65.0)),
+            control_change: core::array::from_fn(|_| Shared::new(0.0)),
         }
     }
 }
@@ -166,8 +166,8 @@ impl SharedMidiState {
     }
 
     /// Set an incoming control change in an `Array<Shared>` where the array index matches control number.
-    pub fn set_control_change(&self, control_idx: u8, value: u8) {
-        self.control_change[control_idx as usize].set_value(value as f32)
+    pub fn set_control_change(&self, control_idx: u8, value: f32) {
+        self.control_change[control_idx as usize].set_value(value)
     }
 
     /// get a control change value based on its data index

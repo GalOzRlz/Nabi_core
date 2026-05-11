@@ -13,7 +13,7 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::{reverb_stereo, U2};
+use fundsp::prelude::U2;
 use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
@@ -26,8 +26,6 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use fundsp::combinator::An;
-use fundsp::prelude32::Var;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -497,7 +495,8 @@ struct SingleSourcePlayer<const N: usize> {
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
     config: Config,
-    global_fx_val_1: usize
+    global_fx_val_1: usize,
+    global_fx_val_2: usize,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
@@ -515,9 +514,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
             synth_func,
             master_volume: shared(1.0),
             program_table,
-            config,
-            global_fx_val_1: 74
-
+            config: config.clone(),
+            global_fx_val_1: config.cc_1,
+            global_fx_val_2: config.cc_2
         }
     }
 
@@ -559,15 +558,6 @@ impl<const N: usize> SingleSourcePlayer<N> {
         println!("=== Sound function called ===");
 
         let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_val_1].clone())));
-        // For debugging - write to file instead of stdout
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("cc_values.log")
-        {
-            use std::io::Write;
-            let _ = writeln!(f, "CC74: {}", self.states[0].control_change[self.global_fx_val_1].value());
-        }
 
         // mix >> reverb_stereo(5.0, 0.5, 0.5)
         mix >> master_reverb(reverb_amount)
@@ -601,7 +591,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     control: CC { control, value },
                 } => {
                     for state in self.states.iter_mut() {
-                        state.set_control_change(*control, *value);
+                        state.set_control_change(*control, *value as f32 / 127.0);
                     }
                 }
                 _ => {}

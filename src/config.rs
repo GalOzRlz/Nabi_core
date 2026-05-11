@@ -20,6 +20,11 @@ pub enum FreeVoiceStrategy {
 pub struct Config {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
+    pub cc_1: usize,
+    pub cc_2: usize,
+    pub cc_3: usize,
+    pub cc_4: usize
+
 }
 
 impl Default for Config {
@@ -27,6 +32,11 @@ impl Default for Config {
         Self {
             voice_stealing: VoiceStealingConfig::LegatoOldest,
             voice_release: FreeVoiceStrategy::ReleaseOnZero,
+            // todo: make these overrideable by controller.toml
+            cc_1: 74,
+            cc_2: 71,
+            cc_3: 76,
+            cc_4: 77
         }
     }
 }

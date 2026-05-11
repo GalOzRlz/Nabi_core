@@ -1,15 +1,15 @@
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
 
-pub fn master_reverb(wet: Net) -> Net {
+pub fn master_reverb(wet_amount: Net) -> Net {
+    // todo: 0 wet = multiplass() early
+    
     // Duplicate wet to stereo (0 inputs, 2 outputs)
-    let wet_stereo = wet.clone() | wet.clone();
-
-    // Stereo dry signal: 1.0 - wet on each channel (0 inputs, 2 outputs)
-    let dry_mono = constant(1.0) - wet;
+    let wet_stereo = wet_amount.clone() | wet_amount.clone();
+    
+    let dry_mono = constant(1.0) - wet_amount;
     let dry_stereo = dry_mono.clone() | dry_mono;
 
-    // Build the effect: (input * dry) + (reverb(input) * wet)
     let pass = Net::wrap(Box::new(multipass::<U2>()));          // U2 -> U2 identity
     let reverb = Net::wrap(Box::new(reverb_stereo(5.0, 2.5, 0.5))); // U2 -> U2
 
