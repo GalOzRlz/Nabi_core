@@ -13,7 +13,7 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::U2;
+use fundsp::prelude::{reverb_stereo, U2};
 use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
@@ -26,6 +26,8 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use fundsp::combinator::An;
+use fundsp::prelude32::Var;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -495,6 +497,7 @@ struct SingleSourcePlayer<const N: usize> {
     program_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
     config: Config,
+    global_fx_val_1: usize
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
@@ -513,6 +516,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
             master_volume: shared(1.0),
             program_table,
             config,
+            global_fx_val_1: 74
+
         }
     }
 
@@ -538,7 +543,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         for i in 1..N {
             sound = sound + Net::wrap(self.sound_at(i));
             if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
-                self.nullify_zero_value_notes(&mut sound, 0);
+                self.nullify_zero_value_notes(&mut sound, i);
             }
         }
         let mix = match sound.outputs() {
@@ -553,18 +558,19 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         println!("=== Sound function called ===");
 
-        let cutoff_val = self.states[0].control_change_var(74);
-        let value = cutoff_val.value();
+        let reverb_amount: Net = Net::wrap(Box::new(var(&self.states[0].control_change[self.global_fx_val_1].clone())));
+        // For debugging - write to file instead of stdout
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("cc_values.log")
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "CC74: {}", self.states[0].control_change[self.global_fx_val_1].value());
+        }
 
-
-        eprintln!("CC74 value (stderr): {}", value);  // Use stderr
-        println!("CC74 value (stdout): {}", value);   // Use stdout
-
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
-
-        let cutoff_val = self.states[0].control_change_var(74);
-        println!("{}", cutoff_val.value());
-        mix >> master_reverb(cutoff_val.value() / 127.0)
+        // mix >> reverb_stereo(5.0, 0.5, 0.5)
+        mix >> master_reverb(reverb_amount)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
