@@ -12,8 +12,7 @@ fn common_follow() -> An<Follow<f64>> {
     follow(0.05)
 }
 
-fn cc_controlled_reverb(wet_amount: Net) -> Net {
-
+fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
 
@@ -21,9 +20,12 @@ fn cc_controlled_reverb(wet_amount: Net) -> Net {
     let dry_stereo = dry_mono.clone() | dry_mono;
 
     let pass = Net::wrap(Box::new(multipass::<U2>())); // U2 -> U2 identity
-    let reverb = Net::wrap(Box::new(reverb_stereo(5.0, 2.5, 0.5))); // U2 -> U2
+    (pass * dry_stereo) & (effect * wet_stereo)
+}
 
-    (pass * dry_stereo) & (reverb * wet_stereo)
+fn cc_controlled_reverb(wet_amount: Net) -> Net {
+    let reverb = Net::wrap(Box::new(reverb_stereo(10.0, 3.0, 0.4)));
+    cc_controlled_wet_dry_fx(wet_amount, reverb)
 }
 
 pub fn prophet_lowpass_filter() -> Net {

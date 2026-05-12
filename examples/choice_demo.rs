@@ -37,9 +37,11 @@ fn run_chooser(
     let main_menu = vec!["Pick New Synthesizer Sound", "Pick New MIDI Device", "Quit"];
     while !*quit && !reset.load() {
         println!("Play notes at will. When ready for a change, select one of the following:");
+        midi_msgs.push(SynthMsg::program_change(16, Speaker::Both));
         match console_choice_from("Choice", &main_menu, |s| *s) {
             0 => {
                 let program = {
+
                     let program_table = program_table.lock().unwrap();
                     console_choice_from("Change synth to", &program_table.entries, |opt| {
                         opt.0.as_str()

@@ -50,7 +50,7 @@ pub struct CombPluck {
 
 impl CombPluck {
     /// Create a new plucked string synthesizer based on damping low pass filter and resonant comb filter.
-    ///
+    ///Inputs 
     /// # Parameters
     /// - `feedback`: Decay per sample (0.0 to 1.0). Higher = longer sustain.
     /// - `max_delay_seconds`: Maximum delay time for lowest frequency (defines lowest note).
