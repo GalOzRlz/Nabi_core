@@ -1,0 +1,4 @@
+[[program]]
+function = "clavichord_soft"
+name = "Grand Piano"
+cc = [1.0, 1.0, 0, 1.0]

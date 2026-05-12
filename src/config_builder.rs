@@ -42,11 +42,51 @@ impl Default for Config {
 
 use std::collections::HashMap;
 use serde::Deserialize;
-use crate::sound_builders::cc_array::CcArray;
+use crate::config_builder::cc_array::CcArray;
 use crate::sound_builders::{IntoSpeakerDef, ProgramTable, SoundBuilder, SoundEntry};
 
+/// Custom deserializer for [u8; 4] from a TOML array of integers.
+pub(crate) mod cc_array {
+    use serde::{Deserialize, Deserializer, de::{self, Visitor}};
+    use std::fmt;
+    use crate::config_builder::ENCODER_COUNT;
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct CcArray(pub [f32; ENCODER_COUNT]);
+
+    impl Default for CcArray {
+        fn default() -> Self { CcArray([0.0; 4]) }
+    }
+
+    impl<'de> Deserialize<'de> for CcArray {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+        {
+            struct CcVisitor;
+            impl<'de> Visitor<'de> for CcVisitor {
+                type Value = CcArray;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("an array of 4 integers (0–255)")
+                }
+                fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+                where A: de::SeqAccess<'de>
+                {
+                    let mut arr = [0.0; 4];
+                    for (i, slot) in arr.iter_mut().enumerate() {
+                        *slot = seq.next_element()?.ok_or_else(|| {
+                            de::Error::invalid_length(i, &self)
+                        })?;
+                    }
+                    Ok(CcArray(arr))
+                }
+            }
+            deserializer.deserialize_seq(CcVisitor)
+        }
+    }
+}
+
 #[derive(Deserialize)]
-struct TomlProgram {
+pub struct TomlProgram {
     function: String,
     #[serde(default)]
     name: Option<String>,
@@ -55,7 +95,7 @@ struct TomlProgram {
 }
 
 #[derive(Deserialize)]
-struct ProgramFile {
+pub struct ProgramFile {
     program: Vec<TomlProgram>,
 }
 
@@ -70,7 +110,7 @@ fn load_program_file(path: &str) -> Result<Vec<TomlProgram>, Box<dyn std::error:
 }
 
 /// Load multiple TOML files, merge duplicates (last definition wins for CC and name).
-fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
+pub fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
     let mut merged: Vec<TomlProgram> = Vec::new();
     let mut index_map: HashMap<String, usize> = HashMap::new(); // function name -> index
 
@@ -101,7 +141,7 @@ fn load_all_programs(paths: &[&str]) -> Vec<TomlProgram> {
     merged
 }
 
-fn build_program_table(programs: &[TomlProgram]) -> ProgramTable {
+pub fn build_program_table(programs: &[TomlProgram]) -> ProgramTable {
     // Lookup from name to raw builder pointer
     let builder_map: HashMap<&str, SoundBuilder> = inventory::iter::<SoundEntry>()
         .map(|e| (e.name, e.builder))
