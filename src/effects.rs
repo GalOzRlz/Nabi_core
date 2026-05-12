@@ -2,10 +2,14 @@ use crate::SharedMidiState;
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
 
+pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
+    Net::wrap(Box::new(fx))
+}
+
 pub fn master_limiter() -> Net {
     let block = dcblock() >> limiter(0.002, 0.3);
     let master = multipass::<U2>() >> (block.clone() | block);
-    Net::wrap(Box::new(master))
+    to_net(master)
 }
 
 fn common_follow() -> An<Follow<f64>> {
@@ -23,8 +27,8 @@ fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     (pass * dry_stereo) & (effect * wet_stereo)
 }
 
-fn cc_controlled_reverb(wet_amount: Net) -> Net {
-    let reverb = Net::wrap(Box::new(reverb_stereo(10.0, 3.0, 0.4)));
+fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32) -> Net {
+    let reverb = to_net(reverb_stereo(10.0, reverb_time, 0.4));
     cc_controlled_wet_dry_fx(wet_amount, reverb)
 }
 
@@ -60,7 +64,7 @@ pub fn master_reverb(global_fx_cc_idx_1: usize, shared_midi_state: &SharedMidiSt
     let reverb_amount: Net = Net::wrap(Box::new(
         var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone()) >> common_follow(),
     ));
-    cc_controlled_reverb(reverb_amount)
+    cc_controlled_reverb(reverb_amount, 3.0)
 }
 
 pub fn eq_2_mono(cc1: usize, cc2: usize, q: f32, shared_midi_state: &SharedMidiState) -> Net {
