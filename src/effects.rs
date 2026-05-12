@@ -26,7 +26,7 @@ fn cc_controlled_reverb(wet_amount: Net) -> Net {
     (pass * dry_stereo) & (reverb * wet_stereo)
 }
 
-pub fn cem_3320_lowpass_filter() -> Net {
+pub fn prophet_lowpass_filter() -> Net {
     Net::wrap(Box::new(
     !butterpass() >> butterpass()))
 }
