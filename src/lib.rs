@@ -33,17 +33,18 @@
 //! convenient Control Change channel for my own MIDI keyboard.) This illustrates how to build and employ
 //! sounds using MIDI Control Change for any application you might imagine.
 
+pub mod config;
+mod effects;
 pub mod io;
 pub mod sound_builders;
 pub mod sounds;
 pub mod tunings;
-pub mod config;
-mod effects;
 
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::config::Config;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -51,7 +52,6 @@ use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::ControlChange::CC;
 use midi_msg::MidiMsg;
-use crate::config::Config;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -85,7 +85,7 @@ pub struct SharedMidiState {
 
 impl Default for SharedMidiState {
     fn default() -> Self {
-         let s = Self {
+        let s = Self {
             pitch: Default::default(),
             velocity: Default::default(),
             control: shared(CONTROL_OFF),
@@ -112,7 +112,11 @@ impl Debug for SharedMidiState {
 
 impl SharedMidiState {
     pub fn with_config(self, config: Config) -> Self {
-        for (cc_num, start_val) in config.cc_mappings.into_iter().zip(config.cc_start_values.into_iter()) {
+        for (cc_num, start_val) in config
+            .cc_mappings
+            .into_iter()
+            .zip(config.cc_start_values.into_iter())
+        {
             self.control_change[cc_num as usize].set_value(start_val);
             println!("cc_num: {}, start_val: {}", cc_num, start_val);
         }

@@ -4,13 +4,11 @@ use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midi_fundsp::sounds::moogs;
 use midi_fundsp::{
-    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning}
-
-    ,
+    io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning},
     tunings::just_intonation,
 };
 use midir::MidiInput;
-use read_input::{shortcut::input, InputBuild};
+use read_input::{InputBuild, shortcut::input};
 
 fn main() -> anyhow::Result<()> {
     let mut midi_in = MidiInput::new("midir reading input")?;
@@ -22,7 +20,7 @@ fn main() -> anyhow::Result<()> {
         midi_msgs,
         Arc::new(Mutex::new(moogs())),
         just_intonation,
-        None
+        None,
     );
     input::<String>().msg("Press Enter to exit\n").get();
     Ok(())

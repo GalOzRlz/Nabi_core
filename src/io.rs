@@ -1,5 +1,7 @@
 use crate::config::{Config, FreeVoiceStrategy, VoiceStealingConfig};
-use crate::effects::{master_highpass, master_limiter, master_lowpass, master_reverb};
+use crate::effects::{
+    eq_2_mono, eq_2_stereo, master_limiter, master_reverb,
+};
 use crate::sound_builders::SpeakerDef;
 use crate::{
     control_change_from, note_velocity_from, sound_builders::ProgramTable, SharedMidiState, SynthFunc,
@@ -291,7 +293,6 @@ impl Speaker {
     }
 }
 trait DubleSpeaker<const N: usize> {
-
     fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self;
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
@@ -357,9 +358,10 @@ trait DubleSpeaker<const N: usize> {
     fn handle_messages(&mut self, midi_msgs: Arc<SegQueue<SynthMsg>>) -> RelayedMessage {
         loop {
             if let Some(msg) = midi_msgs.pop()
-                && let Some(relayed) = self.decode(msg.speaker, &msg.msg) {
-                    return relayed;
-                }
+                && let Some(relayed) = self.decode(msg.speaker, &msg.msg)
+            {
+                return relayed;
+            }
         }
     }
 
@@ -386,7 +388,6 @@ trait DubleSpeaker<const N: usize> {
             )
             .or_else(|err| bail!("{err:?}"))
     }
-
 }
 
 /// The default player that has one stereo stream in and one out (U2 inputs, U2 outputs)
@@ -497,8 +498,8 @@ struct SingleSourcePlayer<const N: usize> {
     config: Config,
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
-    eq_low_cc_idx: usize,
-    eq_high_cc_idx: usize,
+    global_fx_cc_idx_3: usize,
+    global_fx_cc_idx_4: usize,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
@@ -519,8 +520,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
             config: config.clone(),
             global_fx_cc_idx_1: config.cc_mappings[0],
             global_fx_cc_idx_2: config.cc_mappings[1],
-            eq_low_cc_idx: config.cc_mappings[2],
-            eq_high_cc_idx: config.cc_mappings[3],
+            global_fx_cc_idx_3: config.cc_mappings[2],
+            global_fx_cc_idx_4: config.cc_mappings[3],
         }
     }
 
@@ -530,17 +531,15 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
     }
 
-    fn nullify_zero_value_notes(&mut self, sound: &mut Net, i:usize) -> bool {
+    fn nullify_zero_value_notes(&mut self, sound: &mut Net, i: usize) -> bool {
         let sample = sound.get_mono();
         if sample == 0_f32 {
             self.release(i);
-            return true
+            return true;
         }
         false
     }
     fn sound(&mut self) -> Net {
-        let lp = master_lowpass(self.eq_low_cc_idx.clone(), &self.states[0], 1.0);
-        let hp = master_highpass(self.eq_high_cc_idx.clone(), &self.states[0], 5.0);
         let mut sound = Net::wrap(self.sound_at(0));
         if self.config.voice_release == FreeVoiceStrategy::ReleaseOnZero {
             self.nullify_zero_value_notes(&mut sound, 0);
@@ -553,18 +552,31 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
         let mix = match sound.outputs() {
             1 => {
-                (sound * var(&self.master_volume)) >> lp >> hp >>split::<U2>()
+                (sound * var(&self.master_volume))
+                    >> eq_2_mono(
+                        self.global_fx_cc_idx_3.clone(),
+                        self.global_fx_cc_idx_4.clone(),
+                        4.0,
+                        &self.states[0],
+                    )
+                    >> split::<U2>()
             }
             2 => {
-                let vol = var(&self.master_volume) >> (lp.clone() | lp) >> (hp.clone() | hp);
+                let vol = var(&self.master_volume)
+                    >> eq_2_stereo(
+                        self.global_fx_cc_idx_3.clone(),
+                        self.global_fx_cc_idx_4.clone(),
+                        4.0,
+                        &self.states[0],
+                    );
                 sound * vol
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         println!("=== Sound function called ===");
 
+        // need to figure out how to be able to hot swap master reverb with something else?
         mix >> master_limiter() >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
-        // todo: add 2-banded eq > rest of master
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -605,7 +617,11 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 ChannelModeMsg::AllSoundOff => self.all_sounds_off(),
                 _ => {}
             },
-            MidiMsg::SystemRealTime { msg } => if msg == &SystemRealTimeMsg::SystemReset { return Some(RelayedMessage::SystemReset) },
+            MidiMsg::SystemRealTime { msg } => {
+                if msg == &SystemRealTimeMsg::SystemReset {
+                    return Some(RelayedMessage::SystemReset);
+                }
+            }
             _ => {}
         }
         None

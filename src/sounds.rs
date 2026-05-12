@@ -1,3 +1,4 @@
+use crate::effects::simple_lowpass;
 use crate::sound_builders::{Adsr, IntoSpeakerDef, ProgramTable, simple_sound};
 use crate::{SharedMidiState, program_table};
 use fundsp::net::Net;
@@ -6,10 +7,9 @@ use fundsp::prelude::{
     resonator_hz,
 };
 use fundsp::prelude64::{
-    adsr_live, constant, dsf_saw, dsf_square, highpass_hz, organ,
-    pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var,
+    adsr_live, constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine,
+    sine_hz, soft_saw, square, triangle, var,
 };
-use crate::effects::simple_lowpass;
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 pub fn options() -> ProgramTable {
@@ -355,12 +355,17 @@ pub fn music_box<const CC: usize>(state: &SharedMidiState) -> Box<dyn AudioUnit>
     let a4 = 0.100;
     let gate = state.control_var();
 
-    let modes = (mul(1.000) >> (sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.3, synth_adsr.release)))) & ((mul(2.756) >> (sine() * a1))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release))) & ((mul(5.404) >> (sine() * a2))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release))) & ((mul(8.933) >> (sine() * a3))
+    let modes = (mul(1.000)
+        >> (sine() * (gate.clone() >> adsr_live(0.002, 0.5, 0.3, synth_adsr.release))))
+        & ((mul(2.756) >> (sine() * a1))
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 2.0, 0.0, synth_adsr.release)))
+        & ((mul(5.404) >> (sine() * a2))
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 5.0, 0.0, synth_adsr.release)))
+        & ((mul(8.933) >> (sine() * a3))
             * (gate.clone() >> adsr_live(0.002, 0.5 / 10.0, 0.0, synth_adsr.release)))
         & ((mul(13.34) >> (sine() * a4))
-            * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release))) >> dcblock::<f64>();
+            * (gate.clone() >> adsr_live(0.002, 0.5 / 18.0, 0.0, synth_adsr.release)))
+            >> dcblock::<f64>();
 
     let tone = modes >> (pass() ^ (highpass_hz(100.0, 0.7) * 0.10)) >> join::<U2>();
     let body = (pass() * 0.4)
