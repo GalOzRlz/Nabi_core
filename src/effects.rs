@@ -13,7 +13,6 @@ fn common_follow() -> An<Follow<f64>> {
 }
 
 fn cc_controlled_reverb(wet_amount: Net) -> Net {
-    // todo: 0 wet = multiplass() early
 
     // Duplicate wet to stereo (0 inputs, 2 outputs)
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
