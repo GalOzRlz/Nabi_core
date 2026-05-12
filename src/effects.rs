@@ -18,6 +18,7 @@ fn common_follow() -> An<Follow<f64>> {
 
 fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
+    let wet_amount =  wet_amount >> common_follow();
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
 
     let dry_mono = constant(1.0) - wet_amount;
@@ -62,7 +63,7 @@ pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f3
 
 pub fn master_reverb(global_fx_cc_idx_1: usize, shared_midi_state: &SharedMidiState) -> Net {
     let reverb_amount: Net = Net::wrap(Box::new(
-        var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone()) >> common_follow(),
+        var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone())
     ));
     cc_controlled_reverb(reverb_amount, 3.0)
 }
@@ -77,4 +78,60 @@ pub fn eq_2_stereo(cc1: usize, cc2: usize, q: f32, shared_midi_state: &SharedMid
     let hp = master_highpass(cc1, shared_midi_state, q);
     let lp = master_lowpass(cc2, shared_midi_state, q);
     multipass::<U2>() >> (lp.clone() | lp) >> (hp.clone() | hp)
+}
+
+pub fn pitch_drift_mono() -> Net {
+    // A very slow, shallow chorus. Only one voice, 100% wet.
+    // delay: base delay (seconds), depth: modulation depth (seconds),
+    // freq: LFO rate (Hz), mix: 1.0 = all wet (vibrato).
+    Net::wrap(Box::new(pure_chorus(
+        1,       // voices
+        0.009,   // base delay (15 ms)
+        0.003,   // depth (3 ms) – small = few cents of detune
+        2.45,    // LFO frequency (0.15 Hz) – very slow
+    )))
+}
+
+pub fn master_drift(cc: usize, shared_midi_state: &SharedMidiState) -> Net {
+    let wet_amount: Net = Net::wrap(Box::new(
+        var(&shared_midi_state.control_change[cc].clone())));
+    let drift = pitch_drift_mono();
+    let stereo = (drift.clone() | drift);
+    cc_controlled_wet_dry_fx(wet_amount, stereo)
+}
+
+pub fn pure_chorus(
+    seed: u64,
+    separation: f32,
+    variation: f32,
+    mod_frequency: f32,
+) -> An<impl AudioNode<Inputs =prelude::U1, Outputs =prelude::U1>> {
+    (pass()
+        | prelude::lfo(move |t| {
+        (
+            lerp11(
+                separation,
+                separation + variation,
+                fractal_noise(seed, 8, 0.45, t * mod_frequency),
+            ),
+            lerp11(
+                separation * 2.0,
+                separation * 2.0 + variation,
+                fractal_noise(hash1(seed), 8, 0.45, t * (mod_frequency + 0.02)),
+            ),
+            lerp11(
+                separation * 3.0,
+                separation * 3.0 + variation,
+                fractal_noise(hash2(seed), 8, 0.45, t * (mod_frequency + 0.04)),
+            ),
+            lerp11(
+                separation * 4.0,
+                separation * 4.0 + variation,
+                fractal_noise(hash1(seed ^ 0xfedcba), 8, 0.45, t * (mod_frequency + 0.06)),
+            ),
+        )
+    })
+        .interval(0.01))
+        >> fundsp::prelude::multitap::<fundsp::prelude::U4>(separation, separation * 4.0 + variation)
+        * fundsp::prelude::dc(0.2)
 }
