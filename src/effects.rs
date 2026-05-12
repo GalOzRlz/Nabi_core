@@ -37,7 +37,7 @@ pub fn master_lowpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32
     let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> common_follow();
     let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> common_follow();
     Net::wrap(Box::new(
-        (pass() | cutoff_hrz >> follow(0.05_f32)) >> lowpass_q(q),
+        (pass() | cutoff_hrz >> follow(0.05_f32)) >> moog_q(q),
     ))
 }
 
