@@ -1,4 +1,4 @@
-use crate::sound_builders::SoundEntry;
+use crate::sound_builders::PatchEntry;
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::{saw, square};
 use fundsp::prelude::lowpass_hz;

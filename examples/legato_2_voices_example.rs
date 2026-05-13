@@ -2,19 +2,19 @@ use std::sync::{Arc, Mutex};
 
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use midi_fundsp::config_builder::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use midi_fundsp::config_builder::{get_patch_table_from_toml, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use midi_fundsp::io::start_midi_output_thread;
 use midi_fundsp::sound_builders::*;
 use midi_fundsp::{
     io::{get_first_midi_device, start_midi_input_thread},
-    program_table,
+    patch_table,
     sounds::moog_organ,
 };
 use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
 
 fn main() -> anyhow::Result<()> {
-    let mut config = Config::default();
+    let mut config = GlobalConfig::default();
     config.voice_stealing = VoiceStealingConfig::LegatoLast;
     config.voice_release = FreeVoiceStrategy::ReleaseOnZero;
     let mut midi_in = MidiInput::new("midir reading input")?;
@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());
     start_midi_output_thread::<2>(
         midi_msgs,
-        Arc::new(Mutex::new(program_table![("Organ", moog_organ)])),
+        Arc::new(Mutex::new(get_patch_table_from_toml())),
         Some(config),
     );
     input::<String>().msg("Press Enter to exit\n").get();

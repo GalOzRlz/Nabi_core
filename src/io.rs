@@ -1,4 +1,4 @@
-use crate::config_builder::{Config, FreeVoiceStrategy, VoiceStealingConfig};
+use crate::config_builder::{FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig, ENCODER_COUNT};
 use crate::effects::{eq_2_mono, eq_2_stereo, master_drift, master_limiter, master_reverb};
 use crate::sound_builders::SpeakerDef;
 use crate::{
@@ -189,7 +189,7 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 }
 
 /// Plays sounds according to instructions received in the `midi_msgs` queue. Synthesizer sounds may be selected with
-/// MIDI `Program Change` messages that reference sounds stored in `program_table`.
+/// MIDI `Program Change` messages that reference sounds stored in `patch_table`.
 ///
 /// The constant value `N` is the number of distinct sounds it can emit. Each MIDI `Note On` message uses one distinct
 /// sound. When a number of `Note On` messages greater than `N` has been received, the sound used by the oldest `Note On`
@@ -200,18 +200,18 @@ fn input_callback<M: Send + 'static, F: Send + 'static + Fn(MidiMsg) -> M>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<SynthMsg>>,
-    program_table: Arc<Mutex<ProgramTable>>,
-    config: Option<Config>,
+    patch_table: Arc<Mutex<ProgramTable>>,
+    config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
     std::thread::spawn(move || {
-        let mut player = StereoPlayer::<N>::new(program_table, cnf);
+        let mut player = StereoPlayer::<N>::new(patch_table, cnf);
         player.run_output(midi_msgs).unwrap();
     });
 }
 
 /// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
-/// MIDI `Program Change` messages that reference sounds stored in `program_table`.
+/// MIDI `Program Change` messages that reference sounds stored in `patch_table`.
 ///
 /// The constant value `N` is the number of distinct sounds it can emit. Each MIDI `Note On` message uses one distinct
 /// sound. When a number of `Note On` messages greater than `N` has been received, the sound used by the oldest `Note On`
@@ -222,15 +222,15 @@ pub fn start_output_thread<const N: usize>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_midi_output_thread<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
-    program_table: Arc<Mutex<ProgramTable>>,
-    config: Option<Config>,
+    patch_table: Arc<Mutex<ProgramTable>>,
+    config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
-    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(program_table, cnf));
+    inner_start_output_thread(midi_msgs, StereoPlayer::<N>::new(patch_table, cnf));
 }
 
 /// Plays sounds according to `MidiMsg` objects received in the `midi_msgs` queue. Synthesizer sounds may be selected with
-/// MIDI `Program Change` messages that reference sounds stored in `program_table`.
+/// MIDI `Program Change` messages that reference sounds stored in `patch_table`.
 ///
 /// The function `midi_to_hz()` converts MIDI pitches (0-127) to frequencies. To represent
 /// an alternative tuning system, pass in an appropriate function.
@@ -244,12 +244,12 @@ pub fn start_midi_output_thread<const N: usize>(
 /// If a `SystemReset` MIDI message is received, the thread exits.
 pub fn start_midi_output_thread_alt_tuning<const N: usize>(
     midi_msgs: Arc<SegQueue<MidiMsg>>,
-    program_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<ProgramTable>>,
     midi_to_hz: fn(f32) -> f32,
-    config: Option<Config>,
+    config: Option<GlobalConfig>,
 ) {
     let cnf = config.unwrap_or_default();
-    let mut player = StereoPlayer::<N>::new(program_table, cnf);
+    let mut player = StereoPlayer::<N>::new(patch_table, cnf);
     player.set_midi_to_hz(midi_to_hz);
     inner_start_output_thread(midi_msgs, player);
 }
@@ -291,7 +291,7 @@ impl Speaker {
     }
 }
 trait DubleSpeaker<const N: usize> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self;
+    fn new(patch_table: Arc<Mutex<ProgramTable>>, config: GlobalConfig) -> Self;
 
     fn set_midi_to_hz(&mut self, midi_to_hz: fn(f32) -> f32);
 
@@ -394,9 +394,10 @@ struct StereoPlayer<const N: usize> {
 }
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, config: Config) -> Self {
+    fn new(patch_table: Arc<Mutex<ProgramTable>>, config: GlobalConfig) -> Self {
+        let cc_array_values = patch_table.clone().lock().unwrap().entries[0].2;
         let center_source =
-            SingleSourcePlayer::<N>::new(program_table.clone(), Speaker::Both, config);
+            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config, cc_array_values);
         Self { center_source }
     }
 
@@ -491,9 +492,9 @@ struct SingleSourcePlayer<const N: usize> {
     recent_pitches: [Option<u8>; N],
     synth_func: SynthFunc,
     master_volume: Shared,
-    program_table: Arc<Mutex<ProgramTable>>,
+    patch_table: Arc<Mutex<ProgramTable>>,
     speaker: Speaker,
-    config: Config,
+    config: GlobalConfig,
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
     global_fx_cc_idx_3: usize,
@@ -501,20 +502,21 @@ struct SingleSourcePlayer<const N: usize> {
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
-    fn new(program_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: Config) -> Self {
+    fn new(patch_table: Arc<Mutex<ProgramTable>>, speaker: Speaker, config: GlobalConfig, cc_array: [f32;  ENCODER_COUNT]) -> Self {
         let synth_func = {
-            let program_table = program_table.lock().unwrap();
-            def_to_synth(&speaker, program_table.entries[0].1.clone())
+            let patch_table = patch_table.lock().unwrap();
+            def_to_synth(&speaker, patch_table.entries[0].1.clone())
         };
+        let shared_midi_state = SharedMidiState::new(config.cc_mappings, cc_array);
         Self {
-            states: [(); N].map(|_| SharedMidiState::default()),
+            states: [(); N].map(|_| shared_midi_state.clone()),
             next: ModNumC::new(0),
             pitch2state: [None; NUM_MIDI_VALUES],
             recent_pitches: [None; N],
             speaker,
             synth_func,
             master_volume: shared(0.15),
-            program_table,
+            patch_table,
             config: config.clone(),
             global_fx_cc_idx_1: config.cc_mappings[0],
             global_fx_cc_idx_2: config.cc_mappings[1],
@@ -593,8 +595,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 }
                 ChannelVoiceMsg::ProgramChange { program } => {
                     let def = {
-                        let program_table = self.program_table.lock().unwrap();
-                        program_table.entries[*program as usize].1.clone()
+                        let patch_table = self.patch_table.lock().unwrap();
+                        patch_table.entries[*program as usize].1.clone()
                     };
                     self.change_synth(def);
                     return Some(RelayedMessage::SynthChange);
@@ -633,6 +635,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
             VoiceStealingConfig::LegatoOldest => self.next,
             VoiceStealingConfig::LegatoLast => ModNumC::new(self.next.a() + (N - 1)),
         };
+        self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
+        self.release(self.next.a());
         self.claim_state(self.next)
     }
 
@@ -643,7 +647,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
     }
 
     fn on(&mut self, pitch: u8, velocity: u8) {
-        self.master_volume.set_value(1.0);
+        self.master_volume.set_value(0.2);
         let selected = self.find_next_state();
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);

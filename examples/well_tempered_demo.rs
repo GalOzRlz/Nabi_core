@@ -4,11 +4,11 @@ use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
 use midi_fundsp::{
     io::{get_first_midi_device, start_midi_input_thread, start_midi_output_thread_alt_tuning},
-    sounds::options,
     tunings::well_temperament,
 };
 use midir::MidiInput;
 use read_input::{InputBuild, shortcut::input};
+use midi_fundsp::config_builder::get_patch_table_from_toml;
 
 fn main() -> anyhow::Result<()> {
     let mut midi_in = MidiInput::new("midir reading input")?;
@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());
     start_midi_output_thread_alt_tuning::<10>(
         midi_msgs,
-        Arc::new(Mutex::new(options())),
+        Arc::new(Mutex::new(get_patch_table_from_toml())),
         well_temperament,
         None,
     );

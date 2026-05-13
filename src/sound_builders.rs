@@ -12,20 +12,20 @@ use std::sync::Arc;
 pub type SoundBuilder = fn(state: &SharedMidiState) -> Box<dyn AudioUnit>;
 
 /// Globally registered sound entries.
-pub struct SoundEntry {
+pub struct PatchEntry {
     /// Name used in TOML files (e.g. "fm_bell").
     pub name: &'static str,
     pub builder: SoundBuilder,
 }
 
-inventory::collect!(SoundEntry);
+inventory::collect!(PatchEntry);
 
 /// Place this inside every sound file to register the builder.
 #[macro_export]
 macro_rules! register_sound {
     ($name:expr, $builder:ident) => {
         inventory::submit! {
-            SoundEntry {
+            PatchEntry {
                 name: $name,
                 builder: $builder as fn(&SharedMidiState) -> Box<dyn AudioUnit>,
             }
@@ -36,7 +36,7 @@ macro_rules! register_sound {
 #[macro_export]
 /// Convenience macro to build a `ProgramTable` struct. Given a sequence of tuples of `&str` objects
 /// and `SynthFunc` objects, it returns a proper `ProgramTable`.
-macro_rules! program_table {
+macro_rules! patch_table {
     ($( ($name:expr, $def:expr) ),* $(,)?) => {
         ProgramTable::new(vec![
             $( ($name.to_owned(), $def.into_speaker_def()) ),*

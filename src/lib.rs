@@ -36,11 +36,12 @@ pub mod sounds;
 pub mod tunings;
 mod instruments;
 pub mod community_sounds;
+use crate::config_builder::{CcValuesArray, DEFAULT_CC_ARRAY, ENCODER_COUNT};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::config_builder::Config;
+use crate::config_builder::GlobalConfig;
 use fundsp::math::midi_hz;
 use fundsp::net::Net;
 use fundsp::prelude::{An, AudioUnit, FrameMul};
@@ -79,17 +80,16 @@ pub struct SharedMidiState {
     control_change: [Shared; 128],
 }
 
-impl Default for SharedMidiState {
+impl Default for  SharedMidiState {
     fn default() -> Self {
-        let s = Self {
+        Self {
             pitch: Default::default(),
             velocity: Default::default(),
             control: shared(CONTROL_OFF),
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             control_change: core::array::from_fn(|_| Shared::new(0.0)),
-        };
-        s.with_config(Config::default())
+        }
     }
 }
 
@@ -107,14 +107,18 @@ impl Debug for SharedMidiState {
 }
 
 impl SharedMidiState {
-    pub fn with_config(self, config: Config) -> Self {
-        for (cc_num, start_val) in config
-            .cc_mappings
+    
+    pub fn new(cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
+        let s = Self::default();
+        s.with_cc(cc_mapping, cc_array)
+    }
+
+    pub fn with_cc(self, cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
+        for (cc_num, start_val) in cc_mapping
             .into_iter()
-            .zip(config.cc_default_values.into_iter())
+            .zip(cc_array.into_iter())
         {
-            self.control_change[cc_num as usize].set_value(start_val);
-            //println!("cc_num: {}, start_val: {}", cc_num, start_val);
+            self.control_change[cc_num].set_value(start_val);
         }
         self
     }

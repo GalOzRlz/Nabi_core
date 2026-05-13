@@ -1,13 +1,13 @@
 use crate::instruments::{dirty_guitar, hit_comb_pipe, pluck_comb_string};
 use crate::sound_builders::*;
-use crate::{program_table, register_sound, SharedMidiState};
+use crate::{patch_table, register_sound, SharedMidiState};
 use fundsp::net::Net;
 use fundsp::prelude::{brown, db_amp, dcblock, highshelf_hz, join, limiter, lowpass_hz, mul, pass, resonator_hz, shape, AudioUnit, U2};
 use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse, saw, shared, sine, sine_hz, soft_saw, square, triangle, var, Atan};
 
 /// Returns a `ProgramTable` containing all prepared sounds in this file.
 // pub fn options() -> ProgramTable {
-//     program_table![
+//     patch_table![
 //         ("Simple Triangle", simple_triangle),
 //         ("Triangle", adsr_triangle),
 //         ("Organ", adsr_organ),
@@ -32,7 +32,7 @@ use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse
 //
 // /// Returns a `ProgramTable` containing sounds that are personal favorites of the crate author.
 // pub fn favorites() -> ProgramTable {
-//     program_table![
+//     patch_table![
 //         ("80s Beep", simple_triangle),
 //         ("Triangle", adsr_triangle),
 //         ("Organ", adsr_organ),
@@ -55,7 +55,7 @@ use fundsp::prelude64::{constant, dsf_saw, dsf_square, highpass_hz, organ, pulse
 //
 // /// Returns a `ProgramTable` containing Moog sounds.
 // pub fn moogs() -> ProgramTable {
-//     program_table![
+//     patch_table![
 //         ("Moog Organ", moog_organ),
 //         ("Moog Pulse", moog_pulse),
 //         ("Moog Saw", moog_saw),
