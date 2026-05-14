@@ -596,7 +596,9 @@ impl<const N: usize> SingleSourcePlayer<N> {
                     control: CC { control, value },
                 } => {
                     for state in self.states.iter_mut() {
+                        let v = *value as f32 / 127.0;
                         state.set_control_change(*control as usize, *value as f32 / 127.0);
+                        eprintln!("Control {} changed to {}", control, v);
                     }
                 }
                 _ => {}
@@ -619,7 +621,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
     fn find_next_state(&mut self) -> usize {
         for i in self.next.iter() {
             if self.recent_pitches[i.a()].is_none() {
-                println!("adding new voice!");
+                //println!("adding new voice!");
                 return self.claim_state(i);
             }
         }
@@ -629,7 +631,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         };
         self.pitch2state[self.recent_pitches[self.next.a()].unwrap() as usize] = None;
         self.release(self.next.a());
-        println!("Recent pitches state after steal: {:?}", self.recent_pitches);
+        //println!("Recent pitches state after steal: {:?}", self.recent_pitches);
         self.claim_state(self.next)
 
     }
