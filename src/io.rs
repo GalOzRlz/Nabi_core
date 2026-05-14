@@ -648,7 +648,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         self.states[selected].note_on(pitch, velocity);
         self.pitch2state[pitch as usize] = Some(selected);
         self.recent_pitches[selected] = Some(pitch);
-        println!("recent pitches: {:?}", self.recent_pitches);
+        //println!("recent pitches: {:?}", self.recent_pitches);
     }
 
     fn off(&mut self, pitch: u8) {
