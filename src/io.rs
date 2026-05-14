@@ -474,7 +474,7 @@ struct SingleSourcePlayer<const N: usize> {
     patch_table: Arc<Mutex<PatchTable>>,
     speaker: Speaker,
     config: GlobalConfig,
-    // todo: replace with function that reads from config?
+    // todo: replace with function that reads from config? return to u8 values - convert in function to 0.0-1.0
     global_fx_cc_idx_1: usize,
     global_fx_cc_idx_2: usize,
     global_fx_cc_idx_3: usize,
