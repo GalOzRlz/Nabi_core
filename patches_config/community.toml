@@ -1,5 +1,5 @@
 [[program]]
 function = "Square_saw_soft"
 name = "soft square+saw"
-cc = [0.35, 0.3, 0, 1.0]
+cc = [0.35, 0.1, 0.7, 1.0]
 tuning = "just intonation"

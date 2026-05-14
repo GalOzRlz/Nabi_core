@@ -65,7 +65,7 @@ pub fn master_lowpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32
 
 pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f32) -> Net {
     let cutoff_val = var(&shared_midi_state.control_change[cc_idx].clone()) >> cc_smooth();
-    let cutoff_hrz = product(constant(20_000.0), cutoff_val) >> cc_smooth();
+    let cutoff_hrz = product(constant(8_000.0), cutoff_val) >> cc_smooth();
     Net::wrap(Box::new(
         (pass() | cutoff_hrz >> follow(0.05_f32)) >> highpass_q(q),
     ))
