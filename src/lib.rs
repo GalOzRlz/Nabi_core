@@ -41,6 +41,7 @@ mod modulators;
 mod eqs;
 mod effects_builders;
 mod oximedia_effects;
+mod factories;
 
 use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;

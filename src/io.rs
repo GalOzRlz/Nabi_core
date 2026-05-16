@@ -27,10 +27,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use oximedia_effects::stereo_widener::WidenerMode;
-use oximedia_effects::stereo_widener::WidenerMode::HaasDelay;
 use crate::eqs::{cc_eq_2_mono, cc_eq_2_stereo};
-use crate::oximedia_effects::stereo_widener;
 use crate::tunings::TunerBuilder;
 
 #[derive(Clone, Debug)]
