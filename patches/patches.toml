@@ -1,11 +1,12 @@
 [[program]]
 function = "chorused_dirty_guitar"
 name = "chorused dirty guitar"
-cc = [0.2, 0.2, 0.1, 0.75]
-## todo: add these as well to the config building
-# master_fx = ""
 
 [[program]]
 function = "plastic_pipe"
 name = "plastic pipe"
-cc = [0.3, 0.2, 0.0, 0.30]
+
+[[program]]
+function = "Square_saw_soft"
+name = "soft square+saw"
+tuning = "just intonation"

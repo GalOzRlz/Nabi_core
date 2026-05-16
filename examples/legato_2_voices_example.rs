@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     let quit = Arc::new(AtomicCell::new(false));
     let patch_table = Arc::new(Mutex::new(
         create_ordered_patch_table(
-            &["patches_config/community.toml", "patches_config/builtin.toml"],
+            &["patches/patches.toml"],
             &"order.toml",
         )));
     start_midi_input_thread(midi_msgs.clone(), midi_in, in_port, quit.clone());

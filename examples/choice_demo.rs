@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_table = Arc::new(Mutex::new(
             create_ordered_patch_table(
-                &["patches_config/community.toml", "patches_config/builtin.toml"],
+                &["patches/patches.toml"],
                 &"order.toml",
             )));
         start_output_thread::<10>(midi_msgs.clone(), patch_table.clone(), Option::from(global_config));

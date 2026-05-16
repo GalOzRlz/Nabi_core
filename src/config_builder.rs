@@ -8,7 +8,8 @@ use fundsp::math::midi_hz;
 use crate::tunings::{TunerBuilder, TunerEntry};
 
 pub const ENCODER_COUNT: usize = 4;
-pub const DEFAULT_CC_ARRAY: CcValuesArray = [0.0, 0.0, 0.0, 1.0];
+// todo: refactor sound control vs. effects control
+pub const DEFAULT_CC_VALS: CcValuesArray = [0.0, 0.0, 0.0, 1.0];
 pub const DEFAULT_CC_MAPPING: CcMapping = [74, 71, 76, 77];
 pub type CcValuesArray = [f32; ENCODER_COUNT];
 pub type CcMapping = [usize; ENCODER_COUNT];
@@ -83,7 +84,7 @@ impl Default for GlobalConfig {
 pub struct TomlCcArray(pub CcValuesArray);
 
 impl Default for TomlCcArray {
-    fn default() -> Self { TomlCcArray(DEFAULT_CC_ARRAY)}
+    fn default() -> Self { TomlCcArray(DEFAULT_CC_VALS)}
 }
 
 impl<'de> Deserialize<'de> for TomlCcArray {
@@ -100,7 +101,7 @@ impl<'de> Deserialize<'de> for TomlCcArray {
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
             where A: de::SeqAccess<'de>
             {
-                let mut arr = [0.0; ENCODER_COUNT];
+                let mut arr = DEFAULT_CC_VALS.clone();
                 for (i, slot) in arr.iter_mut().enumerate() {
                     *slot = seq.next_element()?.ok_or_else(|| {
                         de::Error::invalid_length(i, &self)
@@ -137,7 +138,7 @@ struct TomlOrderConfig {
 
 // loading and building functions:
 pub fn load_global_config() -> Option<GlobalConfig> {
-    let path = "midi_config/midi.toml";
+    let path = "config/midi.toml";
     let default_config = GlobalConfig::default();
 
     match std::fs::read_to_string(path) {

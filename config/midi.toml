@@ -1,0 +1,22 @@
+[global]
+fx_cc_mapping = [74, 71, 76, 77]
+sound_cc_mapping = []# todo: add faders
+[[global.effects]]
+chain = ["eq", "drift", "reverb"]
+[program.effects.eq]
+low_cut = 0.01
+high_cut = 0.46
+[program.effects.drift]
+drift_amount = 0.345
+[program.effects.reverb]
+room_size = 0.8
+damping = 0.5
+length = 5.3
+mix = 0.7
+[program.effects.eq.mapping]
+low_cut = 3
+high_cut = 4
+[program.effects.drift.mapping]
+drift = 2
+[program.effects.reverb.mapping]
+mix = 1

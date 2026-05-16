@@ -1,5 +1,0 @@
-[[program]]
-function = "Square_saw_soft"
-name = "soft square+saw"
-cc = [0.464, 0.3, 0.023, 0.24]
-tuning = "just intonation"
