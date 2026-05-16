@@ -558,7 +558,6 @@ impl<const N: usize> SingleSourcePlayer<N> {
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         // need to figure out how to be able to hot swap master reverb with something else?
-        
         let net_content = vec![
             master_limiter(),
             cc_eq_2_stereo(
