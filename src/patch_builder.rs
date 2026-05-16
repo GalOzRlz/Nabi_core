@@ -1,9 +1,10 @@
 use crate::config_builder::CcValuesArray;
 use crate::tunings::TunerBuilder;
 use crate::{SharedMidiState, SynthFunc};
-use fundsp::prelude::AudioUnit;
+use fundsp::prelude::{multipass, AudioUnit, U2};
 use inventory;
 use std::sync::Arc;
+use fundsp::net::Net;
 
 pub type SoundBuilder = fn(state: &SharedMidiState) -> Box<dyn AudioUnit>;
 
@@ -80,3 +81,12 @@ impl PatchTable {
     pub fn new(entries: Vec<PatchTableItem>) -> Self {
         Self { entries }
     } }
+
+
+pub fn connect_node_vec(node_vec: &Vec<Net>, mut starting_net: Option<Net>) -> Net {
+    let mut net = starting_net.unwrap_or_else(|| Net::wrap(Box::new(multipass::<U2>())));
+    for node in node_vec.to_owned().into_iter() {
+        net = net >> node;
+    }
+    net
+}

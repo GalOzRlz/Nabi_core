@@ -1,7 +1,7 @@
 use std::ops::Shr;
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{master_tape_effect, master_limiter, master_reverb};
-use crate::patch_builder::{PatchTableItem, SpeakerDef};
+use crate::patch_builder::{connect_node_vec, PatchTableItem, SpeakerDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
@@ -558,8 +558,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
         // need to figure out how to be able to hot swap master reverb with something else?
-
-        let mut stereo_net =  Net::wrap(Box::new(multipass::<U2>()));
+        
         let net_content = vec![
             master_limiter(),
             cc_eq_2_stereo(
@@ -568,9 +567,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 0.3,
                 &self.states[0]),
             master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])];
-        for node in net_content.to_owned().into_iter() {
-            stereo_net = stereo_net >> node;
-        }
+        let stereo_net = connect_node_vec(&net_content, None);
         mix >> stereo_net
             >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
