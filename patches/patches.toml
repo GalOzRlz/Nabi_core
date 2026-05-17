@@ -16,7 +16,6 @@ chain = ["reverb"]
 room_size = 0.8
 damping   = 0.5
 length    = 4.2                     # reverb tail length in seconds
-
 # CC‑mappable parameter: mix
 mix = 0.6                           # initial value (CC knob will override)
 #

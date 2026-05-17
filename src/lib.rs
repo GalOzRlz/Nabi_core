@@ -43,7 +43,7 @@ mod effects_builders;
 mod oximedia_effects;
 mod factories;
 
-use crate::config_builder::{CcMapping, CcValuesArray, ENCODER_COUNT};
+use crate::config_builder::{CcMapping, CcValuesArray};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -201,10 +201,10 @@ impl SharedMidiState {
 
     /// get a control change value based on the abstracted mapping of 1...N
     pub fn get_control_change(&self, idx: usize) -> An<Var> {
-        let cc = self.cc_mapping[idx+1];
+        let cc = self.cc_mapping[idx-1];
         self.control_change_var(cc)
     }
-    
+
     /// Encodes a MIDI `Note On` event as a positive gate signal
     pub fn note_on(&self, pitch: u8, velocity: u8) {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));

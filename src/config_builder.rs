@@ -1,8 +1,7 @@
 use crate::patch_builder::{SoundEntry, PatchTable, SoundBuilder, PatchDef};
-use serde::{de::{self, Visitor}, Deserialize, Deserializer};
+use serde::{de::{Visitor}, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt;
 use std::sync::Arc;
 use fundsp::math::midi_hz;
 use fundsp::prelude64::AudioUnit;
@@ -123,7 +122,7 @@ struct TomlOrderConfig {
 
 // loading and building functions:
 pub fn load_global_config() -> Option<GlobalConfig> {
-    let path = "config/midi.toml";
+    let path = "config/global.toml";
     let default_config = GlobalConfig::default();
 
     match std::fs::read_to_string(path) {
@@ -136,13 +135,13 @@ pub fn load_global_config() -> Option<GlobalConfig> {
                     voice_release: cfg.global.voice_release.unwrap_or(default_config.voice_release),
                 }),
                 Err(e) => {
-                    eprintln!("Warning: failed to parse midi.toml: {}. Using defaults.", e);
+                    eprintln!("Warning: failed to parse global.toml: {}. Using defaults.", e);
                     Some(default_config)
                 }
             }
         }
         Err(_) => {
-            eprintln!("midi.toml not found, using default config.");
+            eprintln!("global.toml not found, using default config.");
             Some(default_config)
         }
     }
