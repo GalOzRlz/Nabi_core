@@ -1,12 +1,24 @@
-[[program]]
-function = "chorused_dirty_guitar"
-name = "chorused dirty guitar"
-
-[[program]]
-function = "plastic_pipe"
-name = "plastic pipe"
-
+#[[program]]
+#function = "chorused_dirty_guitar"
+#name = "chorused dirty guitar"
+#
+#[[program]]
+#function = "plastic_pipe"
+#name = "plastic pipe"
 [[program]]
 function = "Square_saw_soft"
 name = "soft square+saw"
-tuning = "just intonation"
+tuning = "just intonation"                # registered tuner
+[program.effects]
+chain = ["reverb"]
+[program.effects.reverb]
+# Construction parameters (never modulated)
+room_size = 0.8
+damping   = 0.5
+length    = 4.2                     # reverb tail length in seconds
+
+# CC‑mappable parameter: mix
+mix = 0.6                           # initial value (CC knob will override)
+#
+[program.effects.reverb.mapping]
+mix = 2                             # force “mix” to logical knob 3 (default may be 1)

@@ -1,6 +1,5 @@
 [global]
 fx_cc_mapping = [74, 71, 76, 77]
-sound_cc_mapping = []# todo: add faders
 [[global.effects]]
 chain = ["eq", "drift", "reverb"]
 [program.effects.eq]

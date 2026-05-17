@@ -43,7 +43,7 @@ mod effects_builders;
 mod oximedia_effects;
 mod factories;
 
-use crate::config_builder::{CcValuesArray, ENCODER_COUNT};
+use crate::config_builder::{CcMapping, CcValuesArray, ENCODER_COUNT};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -84,6 +84,7 @@ pub struct SharedMidiState {
     pitch_bend: Shared,
     midi_to_hz: fn(f32) -> f32,
     control_change: [Shared; 128],
+    cc_mapping: CcMapping,
 }
 
 impl Default for  SharedMidiState {
@@ -95,6 +96,7 @@ impl Default for  SharedMidiState {
             pitch_bend: shared(1.0),
             midi_to_hz: midi_hz,
             control_change: core::array::from_fn(|_| Shared::new(0.0)),
+            cc_mapping: Default::default(),
         }
     }
 }
@@ -113,13 +115,14 @@ impl Debug for SharedMidiState {
 }
 
 impl SharedMidiState {
-    
-    pub fn new(cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
-        let s = Self::default();
-        s.with_cc(cc_mapping, cc_array)
+
+    pub fn new(cc_mapping: CcMapping, cc_array: CcValuesArray) -> Self {
+        let mut s = Self::default();
+        s.cc_mapping = cc_mapping;
+        s.set_ccs(cc_mapping, cc_array)
     }
 
-    pub fn with_cc(self, cc_mapping: [usize; ENCODER_COUNT], cc_array: CcValuesArray) -> Self {
+    pub fn set_ccs(self, cc_mapping: CcMapping, cc_array: CcValuesArray) -> Self {
         for (cc_num, start_val) in cc_mapping
             .into_iter()
             .zip(cc_array.into_iter())
@@ -191,10 +194,17 @@ impl SharedMidiState {
     }
 
     /// get a control change value based on its data index
-    pub fn control_change_var(&self, idx: usize) -> An<Var> {
+    fn control_change_var(&self, idx: usize) -> An<Var> {
         var(&self.control_change[idx])
     }
 
+
+    /// get a control change value based on the abstracted mapping of 1...N
+    pub fn get_control_change(&self, idx: usize) -> An<Var> {
+        let cc = self.cc_mapping[idx+1];
+        self.control_change_var(cc)
+    }
+    
     /// Encodes a MIDI `Note On` event as a positive gate signal
     pub fn note_on(&self, pitch: u8, velocity: u8) {
         self.pitch.set_value((self.midi_to_hz)(pitch as f32));

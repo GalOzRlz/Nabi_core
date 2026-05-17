@@ -15,7 +15,7 @@ macro_rules! register_effect {
         cc_params: [ $( ($cc_name:expr, $cc_default:expr, $val_default:expr) ),* $(,)? ]
     ) => {
         inventory::submit! {
-            $crate::sound_registry::EffectDef {
+            EffectDef {
                 name: $name,
                 factory: $factory as fn(&toml::Table, &std::collections::HashMap<String, usize>) -> _,
                 construction_defaults: &[ $( ($c_name, $c_default) ),* ],

@@ -1,9 +1,13 @@
+use crate::effects_builders::EffectDef;
+use std::collections::HashMap;
 use std::f32::consts::LN_2;
 use std::f64::consts::{PI};
 use crate::modulators::{smooth_noise_constructor, smooth_random_lfo};
-use crate::SharedMidiState;
+use crate::{register_effect, SharedMidiState};
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
+use toml::Table;
+use crate::effects_builders::EffectBuilder;
 use crate::eqs::master_lowpass;
 
 pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
@@ -41,8 +45,8 @@ fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     (pass * dry_stereo) & (effect * wet_stereo)
 }
 
-fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32) -> Net {
-    let reverb = to_net(reverb_stereo(10.0, reverb_time, 0.4));
+fn cc_controlled_reverb(wet_amount: Net, reverb_time: f32, room_size: f32, damping: f32) -> Net {
+    let reverb = to_net(reverb_stereo(room_size, reverb_time, damping));
     cc_controlled_wet_dry_fx(wet_amount, reverb)
 }
 
@@ -57,13 +61,6 @@ pub fn master_highpass(cc_idx: usize, shared_midi_state: &SharedMidiState, q: f3
     Net::wrap(Box::new(
         (pass() | cutoff_hrz >> follow(0.05_f32)) >> highpass_q(q),
     ))
-}
-
-pub fn master_reverb(global_fx_cc_idx_1: usize, shared_midi_state: &SharedMidiState) -> Net {
-    let reverb_amount: Net = Net::wrap(Box::new(
-        var(&shared_midi_state.control_change[global_fx_cc_idx_1].clone())
-    ));
-    cc_controlled_reverb(reverb_amount, 3.0)
 }
 
 pub fn eq_2_mono(cc1: usize, cc2: usize, q: f32, shared_midi_state: &SharedMidiState) -> Net {
@@ -144,3 +141,22 @@ pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_m
     let ps = pitch_shifter(pitch_st, freq_hz, 1.0);
     cc_controlled_wet_dry_fx(depth, ps)
 }
+
+fn fundsp_reverb_factory(
+    construction: &Table,
+    cc_map: &HashMap<String, usize>,
+) -> EffectBuilder {
+    let room_size = construction.get("room_size").and_then(|v| v.as_float()).unwrap_or(8.8);
+    let damping   = construction.get("damping").and_then(|v| v.as_float()).unwrap_or(0.5);
+    let length    = construction.get("length").and_then(|v| v.as_float()).unwrap_or(3.0);
+    let mix_cc  = *cc_map.get("mix").unwrap(); // 1‑based
+    Box::new(move | state| {
+        let mix = state.get_control_change(mix_cc);
+        cc_controlled_reverb(to_net(mix), length as f32, room_size as f32, damping as f32)
+    })
+}
+
+register_effect!("reverb", fundsp_reverb_factory,
+    construction_params: [ ("room_size", 0.8), ("damping", 0.5), ("length", 3.0) ],
+    cc_params: [ ("mix", 1, 0.5) ]
+);

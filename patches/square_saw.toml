@@ -5,7 +5,7 @@ name = "soft square+saw"
 tuning = "just intonation"
 [program.config]
 sqr_saw_mix = 0.5
-[[program.effects]]
+[program.effects]
 chain = ["eq", "drift", "reverb"] # order matters !
 [program.effects.eq]
 low_cut = 0.01

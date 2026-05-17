@@ -97,6 +97,7 @@ pub struct TomlEffectSection {
     #[serde(flatten)]
     pub extras: HashMap<String, toml::Value>, // captures tables like `eq`, `reverb`, …
 }
+
 /// One program entry in the TOML file.
 #[derive(Deserialize)]
 pub struct TomlProgram {
