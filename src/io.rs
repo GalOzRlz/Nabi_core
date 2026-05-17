@@ -26,6 +26,7 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
+use crate::effects::master_limiter;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -533,7 +534,8 @@ impl<const N: usize> SingleSourcePlayer<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
-        self.assemble_master(mix)
+        let limited_mix = mix >> master_limiter();
+        self.assemble_master(limited_mix)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {

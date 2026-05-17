@@ -1,4 +1,4 @@
-use crate::effects_builders::EffectDef;
+use crate::effects_builders::{EffectDef, EffectInput};
 use std::collections::HashMap;
 use std::f32::consts::LN_2;
 use std::f64::consts::{PI};
@@ -12,10 +12,6 @@ use crate::eqs::master_lowpass;
 
 pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
     Net::wrap(Box::new(fx))
-}
-
-pub fn mono_to_stereo(net: Net) -> Net {
-    net.clone() | net
 }
 
 pub fn master_limiter() -> Net {
@@ -83,8 +79,8 @@ pub fn tape_wow(depth: Net) -> Net {
     let flutter_mod = smooth_noise_constructor(smooth3, 9.0);
     let total_wow = (wow_mod * depth.clone() + 2.0) * wow_ms_range;
     let total_flutter = (flutter_mod * depth + 2.0) * flutter_ms_range;
-    let mix = (pass() | total_wow + total_flutter)  >> tap_linear(center-wow_ms_range-flutter_ms_range, center+wow_ms_range+flutter_ms_range);
-    Net::wrap(Box::new(mix.clone()|mix))
+    let wet_amount = (pass() | total_wow + total_flutter)  >> tap_linear(center-wow_ms_range-flutter_ms_range, center+wow_ms_range+flutter_ms_range);
+    Net::wrap(Box::new(wet_amount.clone()|wet_amount))
 }
 
 pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net {
@@ -129,34 +125,43 @@ pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
     // Smooth with short decay delay
     let feedback_line = feedback(delay(0.003) * 0.5);
 
-    // Dry/wet mix with feedback on wet path
+    // Dry/wet wet_amount with feedback on wet path
     let dry = pass() * dc(1.0 - wet_amt);
     let wet = shifted_env >> feedback_line * dc(wet_amt);
     to_net(dry & wet)
 }
 
-pub fn master_frequency_shifter(pitch_st: f32, freq_hz: f32, cc: usize, shared_midi_state: &SharedMidiState) -> Net {
-    let depth: Net = Net::wrap(Box::new(
-        var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
-    let ps = pitch_shifter(pitch_st, freq_hz, 1.0);
-    cc_controlled_wet_dry_fx(depth, ps)
+
+pub fn frequency_shifter_factory(input: &EffectInput) -> EffectBuilder {
+    let pitch_st = input.param("pitch_st", 12.0);
+    let freq_hz   = input.param("freq_hz", 60.0);
+    let wet_amount_cc    = input.cc_knob("wet_amount");
+    Box::new(move | state| {
+        let ps = pitch_shifter(pitch_st as f32, freq_hz as f32, 1.0);
+        let wet_amount = state.control_change_net(wet_amount_cc);
+        cc_controlled_wet_dry_fx(wet_amount, ps)
+
+    })
 }
 
-fn fundsp_reverb_factory(
-    construction: &Table,
-    cc_map: &HashMap<String, usize>,
-) -> EffectBuilder {
-    let room_size = construction.get("room_size").and_then(|v| v.as_float()).unwrap_or(8.8);
-    let damping   = construction.get("damping").and_then(|v| v.as_float()).unwrap_or(0.5);
-    let length    = construction.get("length").and_then(|v| v.as_float()).unwrap_or(3.0);
-    let mix_cc  = *cc_map.get("mix").unwrap(); // 1‑based
+register_effect!("dirty_pitch_shifter", frequency_shifter_factory,
+    construction_params: [ ("pitch_st", 12.0), ("freq_hz", 60.0),],
+    cc_params: [ ("wet_amount", 2, 0.6) ]
+);
+
+
+fn fundsp_reverb_factory(input: &EffectInput) -> EffectBuilder {
+    let room_size = input.param("room_size", 0.8);
+    let damping   = input.param("damping", 0.5);
+    let length    = input.param("length", 3.0);
+    let wet_amount_cc    = input.cc_knob("wet_amount");
     Box::new(move | state| {
-        let mix = state.get_control_change(mix_cc);
-        cc_controlled_reverb(to_net(mix), length as f32, room_size as f32, damping as f32)
+        let wet_amount = state.get_control_change(wet_amount_cc);
+        cc_controlled_reverb(to_net(wet_amount), length as f32, room_size as f32, damping as f32)
     })
 }
 
 register_effect!("reverb", fundsp_reverb_factory,
     construction_params: [ ("room_size", 0.8), ("damping", 0.5), ("length", 3.0) ],
-    cc_params: [ ("mix", 1, 0.5) ]
+    cc_params: [ ("wet_amount", 1, 0.5) ]
 );

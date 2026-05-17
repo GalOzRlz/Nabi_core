@@ -55,6 +55,7 @@ use fundsp::prelude64::{shared, var};
 use fundsp::shared::{Shared, Var};
 use midi_msg::ControlChange::CC;
 use midi_msg::MidiMsg;
+use crate::effects::to_net;
 
 /// MIDI values for pitch and velocity range from 0 to 127.
 pub const MAX_MIDI_VALUE: u8 = 127;
@@ -203,6 +204,10 @@ impl SharedMidiState {
     pub fn get_control_change(&self, idx: usize) -> An<Var> {
         let cc = self.cc_mapping[idx-1];
         self.control_change_var(cc)
+    }
+
+    pub fn control_change_net(&self, idx: usize) -> Net {
+        to_net(self.get_control_change(idx))
     }
 
     /// Encodes a MIDI `Note On` event as a positive gate signal

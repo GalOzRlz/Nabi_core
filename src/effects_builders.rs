@@ -10,19 +10,51 @@ use crate::SharedMidiState;
 macro_rules! register_effect {
     (
         $name:expr,
-        $factory:ident,
+        $factory_fn:ident,                          // author's function: fn(&EffectInput) -> EffectBuilder
         construction_params: [ $( ($c_name:expr, $c_default:expr) ),* $(,)? ],
-        cc_params: [ $( ($cc_name:expr, $cc_default:expr, $val_default:expr) ),* $(,)? ]
+        cc_params: [ $( ($cc_name:expr, $cc_default_knob:expr, $cc_default_val:expr) ),* $(,)? ]
     ) => {
-        inventory::submit! {
-            EffectDef {
-                name: $name,
-                factory: $factory as fn(&toml::Table, &std::collections::HashMap<String, usize>) -> _,
-                construction_defaults: &[ $( ($c_name, $c_default) ),* ],
-                cc_params: &[ $( ($cc_name, $cc_default, $val_default) ),* ],
+        // Wrapper that matches the EffectFactory signature
+        paste::paste! {
+            fn [<__effect_wrapper_ $name>] (
+                construction: &toml::Table,
+                cc_map: &std::collections::HashMap<String, usize>,
+            ) -> EffectBuilder {
+                let input = EffectInput { construction, cc_map };
+                $factory_fn(&input)
+            }
+
+            inventory::submit! {
+                EffectDef {
+                    name: $name,
+                    factory: [<__effect_wrapper_ $name>] as fn(
+                        &toml::Table,
+                        &std::collections::HashMap<String, usize>,
+                    ) -> EffectBuilder,
+                    construction_defaults: &[ $( ($c_name, $c_default) ),* ],
+                    cc_params: &[ $( ($cc_name, $cc_default_knob, $cc_default_val) ),* ],
+                }
             }
         }
     };
+}
+
+pub struct EffectInput<'a> {
+    pub construction: &'a Table,
+    pub cc_map: &'a HashMap<String, usize>,
+}
+
+impl<'a> EffectInput<'a> {
+    pub fn param(&self, key: &str, default: f64) -> f64 {
+        self.construction
+            .get(key)
+            .and_then(|v| v.as_float())
+            .unwrap_or(default)
+    }
+
+    pub fn cc_knob(&self, key: &str) -> usize {
+        *self.cc_map.get(key).unwrap_or(&0)
+    }
 }
 
 pub type EffectBuilder = Box<

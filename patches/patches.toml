@@ -20,4 +20,4 @@ length    = 4.2                     # reverb tail length in seconds
 mix = 0.6                           # initial value (CC knob will override)
 #
 [program.effects.reverb.mapping]
-mix = 2                             # force “mix” to logical knob 3 (default may be 1)
+mix = 2                             # force “mix” to logical knob 2 (default may be 1)
