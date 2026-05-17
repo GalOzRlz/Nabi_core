@@ -48,7 +48,7 @@ fn run_chooser(
                 let program = {
                     let patch_table = patch_table.lock().unwrap();
                     console_choice_from("Change synth to", &patch_table.entries, |opt| {
-                        opt.0.as_str()
+                        opt.name.as_str()
                     })
                 };
                 midi_msgs.push(SynthMsg::patch_change(program as u8, Speaker::Both));

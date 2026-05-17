@@ -1,5 +1,5 @@
 use crate::patch_helpers::Adsr;
-use crate::patch_builder::PatchEntry;
+use crate::patch_builder::SoundEntry;
 use crate::{register_sound, SharedMidiState};
 use fundsp::audiounit::AudioUnit;
 use fundsp::prelude64::*;

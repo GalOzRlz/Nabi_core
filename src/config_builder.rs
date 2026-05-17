@@ -1,10 +1,13 @@
-use crate::patch_builder::{IntoSpeakerDef, PatchEntry, PatchTable, PatchTableItem, SoundBuilder};
+use crate::patch_builder::{SoundEntry, PatchTable, SoundBuilder, PatchDef};
 use serde::{de::{self, Visitor}, Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
-use fastrand::usize;
+use std::sync::Arc;
 use fundsp::math::midi_hz;
+use fundsp::prelude64::AudioUnit;
+use crate::effects_builders::{EffectDef, PatchFxChain};
+use crate::{SharedMidiState, SynthFunc};
 use crate::tunings::{TunerBuilder, TunerEntry};
 
 pub const ENCODER_COUNT: usize = 4;
@@ -78,57 +81,38 @@ impl Default for GlobalConfig {
     }
 }
 
-
-/// Custom deserializer for [u8; 4] from a TOML array of integers.
-#[derive(Debug, Clone, Copy)]
-pub struct TomlCcArray(pub CcValuesArray);
-
-impl Default for TomlCcArray {
-    fn default() -> Self { TomlCcArray(DEFAULT_CC_VALS)}
-}
-
-impl<'de> Deserialize<'de> for TomlCcArray {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de>
-    {
-        struct CcVisitor;
-        impl<'de> Visitor<'de> for CcVisitor {
-            type Value = TomlCcArray;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                let fmt = format!("an array of {} integers (0–255)", ENCODER_COUNT);
-                f.write_str(fmt.as_str())
-            }
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where A: de::SeqAccess<'de>
-            {
-                let mut arr = DEFAULT_CC_VALS.clone();
-                for (i, slot) in arr.iter_mut().enumerate() {
-                    *slot = seq.next_element()?.ok_or_else(|| {
-                        de::Error::invalid_length(i, &self)
-                    })?;
-                }
-                Ok(TomlCcArray(arr))
-            }
-        }
-        deserializer.deserialize_seq(CcVisitor)
-    }
+#[derive(Deserialize)]
+pub struct TomlPatchDef {
+    pub function: String,
+    pub name: String,
+    pub tuning: Option<String>,
+    pub config: Option<toml::Table>,
+    pub effects: Option<TomlEffectSection>,
 }
 
 
 #[derive(Deserialize)]
-pub struct TomlPatch {
-    function: String,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    cc: TomlCcArray,
-    #[serde(default)]
-    tuning: Option<String>,
+pub struct TomlEffectSection {
+    pub chain: Vec<String>,
+    #[serde(flatten)]
+    pub extras: HashMap<String, toml::Value>, // captures tables like `eq`, `reverb`, …
 }
-
+/// One program entry in the TOML file.
 #[derive(Deserialize)]
-pub struct PatchFile {
-    program: Vec<TomlPatch>,
+pub struct TomlProgram {
+    pub function: String,                 // voice builder name
+    #[serde(default)]
+    pub name: Option<String>,             // optional display name
+    #[serde(default)]
+    pub tuning: Option<String>,           // optional tuning name
+    #[serde(default)]
+    pub config: toml::Table,              // per‑voice static config
+    #[serde(default)]
+    pub effects: Option<TomlEffectSection>,// optional effects section
+}
+#[derive(Deserialize)]
+pub struct ProgramsFile {
+    pub program: Vec<TomlProgram>,        // or rename to `PatchFile`
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -163,14 +147,14 @@ pub fn load_global_config() -> Option<GlobalConfig> {
     }
 }
 
-fn load_patch_file(path: &str) -> Result<Vec<TomlPatch>, Box<dyn std::error::Error>> {
+fn load_patch_file(path: &str) -> Result<Vec<TomlProgram>, Box<dyn std::error::Error>> {
     let text = std::fs::read_to_string(path)?;
-    let file: PatchFile = toml::from_str(&text)?;
+    let file: ProgramsFile = toml::from_str(&text)?;
     Ok(file.program)
 }
 
 /// Load multiple TOML files, merge duplicates (last definition wins for CC and name).
-pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
+pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatchDef> {
     let mut all_programs = Vec::new();
     let mut used_names: HashSet<String> = HashSet::new();
 
@@ -195,88 +179,111 @@ pub fn load_all_programs(paths: &[&str]) -> Vec<TomlPatch> {
             }
             used_names.insert(display_name.clone());
 
-            all_programs.push(TomlPatch {
+            // Preserve the original config and effects from the TOML
+            all_programs.push(TomlPatchDef {
                 function: prog.function,
-                name: Some(display_name),
-                cc: prog.cc,
+                name: display_name,
                 tuning: prog.tuning,
+                config: Some(prog.config),
+                effects: prog.effects,
             });
         }
     }
     all_programs
 }
 
-pub fn build_patch_table(programs: &[TomlPatch]) -> PatchTable {
-    // Lookup from name to raw builder pointer
-    let builder_map: HashMap<&str, SoundBuilder> = inventory::iter::<PatchEntry>()
+pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
+    // Build lookup maps from the static registries
+    let sound_map: HashMap<&str, SoundBuilder> = inventory::iter::<SoundEntry>()
         .map(|e| (e.name, e.builder))
         .collect();
+    let effect_map: HashMap<&str, &EffectDef> = inventory::iter::<EffectDef>()
+        .map(|e| (e.name, e))
+        .collect();
+    let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
+        .map(|e| (e.name, e.tuner))
+        .collect();
 
-    let mut entries = Vec::new();
+    let default_tuner = midi_hz;   // your built‑in equal temperament
+
+    let mut patch_defs = Vec::new();
+
     for prog in programs {
-        let builder = match builder_map.get(prog.function.as_str()) {
+        // Resolve voice builder
+        let voice_builder = match sound_map.get(prog.function.as_str()) {
             Some(&b) => b,
             None => {
-                eprintln!(
-                    "Unknown function '{}' for program '{}', skipping {:?}",
-                    prog.function,
-                    prog.name.as_deref().unwrap_or(&prog.function),
-                    prog.tuning,
-                );
+                eprintln!("Unknown function '{}' for program '{}', skipping",
+                          prog.function, prog.name);
                 continue;
             }
         };
 
-        let tuner_map: HashMap<&str, TunerBuilder> = inventory::iter::<TunerEntry>()
-            .map(|e| (e.name, e.tuner))
-            .collect();
-        let tuner = if let Some(ref tuning_name) = prog.tuning {
-            match tuner_map.get(tuning_name.as_str()) {
-                Some(&t) => t,
-                None => {
-                    eprintln!("Unknown tuning '{}', using default", tuning_name);
-                    midi_hz
-                }
-            }
+        // Resolve tuner
+        let tuning = if let Some(ref tuning_name) = prog.tuning {
+            tuner_map.get(tuning_name.as_str()).copied().unwrap_or_else(|| {
+                eprintln!("Unknown tuning '{}', using default", tuning_name);
+                default_tuner
+            })
         } else {
-            midi_hz
+            default_tuner
         };
-        let cc = prog.cc.0; // [u8; 4]
-        let name = prog.name.clone().unwrap_or_else(|| prog.function.clone());
-        let def = (name, builder.into_speaker_def(), cc, tuner);
-        entries.push(def);
+
+        // Build effect chain
+        let fx_chain = PatchFxChain::new(prog.effects.as_ref(), &effect_map);
+
+        // Prepare voice config (empty table if missing)
+        //let voice_config = prog.config.clone().unwrap_or_else(toml::Table::new);
+
+        // Wrap everything into an Arc closure (SynthFunc)
+        let synth_func: SynthFunc = Arc::new(move |state: &SharedMidiState| -> Box<dyn AudioUnit> {
+            voice_builder(state)
+        });
+
+        // Assemble PatchDef
+        let patch_def = PatchDef {
+            function: synth_func,
+            name: prog.name.clone(),
+            tuning,
+            sound_config: None,   // or keep the original clone if needed
+            effects: fx_chain,                  // moved into closure, but we still have it here? Wait – `fx_chain` was moved into the closure above.
+        };
+
+        patch_defs.push(patch_def);
     }
-    PatchTable::new(entries)
+
+    PatchTable::new(patch_defs)
 }
 
 fn get_patch_table_from_toml(paths: &[&str]) -> PatchTable {
     let all_programs = load_all_programs(paths);
-
     let table = build_patch_table(&all_programs);
-    println!("Loaded {} programs:", &table.entries.len());
-    for (i, (name, _, _, _)) in table.entries.iter().enumerate() {
-        println!("  {}: {name}", i + 1);
-    }
     table
 }
 
-pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
-    // Attach original index to each entry, then drain.
-    let indexed: Vec<(usize, PatchTableItem)> = entries
-        .drain(..)
+/// Rearranges the entries of a PatchTable so that programs whose names appear
+/// in `order` come first, in that order. Unmentioned programs are appended
+/// at the end, preserving their original relative order.
+fn reorder_by_names(entries: &mut Vec<PatchDef>, order: &[String]) {
+    // Remove all entries temporarily, replacing with an empty vector.
+    let old_entries = std::mem::take(entries);
+
+    // Attach original index to each entry.
+    let mut indexed: Vec<(usize, PatchDef)> = old_entries
+        .into_iter()
         .enumerate()
         .collect();
 
-    // Build lookup from name to the actual entry.
-    let mut name_to_entry: HashMap<String, (usize, PatchTableItem)> = HashMap::new();
-    for item in indexed {
-        name_to_entry.insert(item.1.0.clone(), item);
+    // Build a map from program name -> (index, entry)
+    let mut name_to_entry: HashMap<String, (usize, PatchDef)> = HashMap::new();
+    for (idx, entry) in indexed {
+        name_to_entry.insert(entry.name.clone(), (idx, entry));
     }
 
     let mut new_entries = Vec::with_capacity(name_to_entry.len());
     let mut used_indices = HashSet::new();
 
-    // Pick entries in the given order.
+    // Place entries that appear in the order list.
     for name in order {
         if let Some((idx, entry)) = name_to_entry.remove(name) {
             new_entries.push(entry);
@@ -284,15 +291,14 @@ pub fn reorder_by_names(entries: &mut Vec<PatchTableItem>, order: &[String]) {
         }
     }
 
-    // Collect the remaining entries, sorted by original index.
-    let mut remaining: Vec<(usize, PatchTableItem)> = name_to_entry
-        .into_values()
-        .collect();
+    // Append the remaining entries, sorted by their original index.
+    let mut remaining: Vec<(usize, PatchDef)> = name_to_entry.into_values().collect();
     remaining.sort_by_key(|(idx, _)| *idx);
     for (_, entry) in remaining {
         new_entries.push(entry);
     }
 
+    // Replace the original vector with the reordered one.
     *entries = new_entries;
 }
 

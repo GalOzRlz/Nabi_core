@@ -1,7 +1,7 @@
 use std::ops::Shr;
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
 use crate::effects::{master_tape_effect, master_limiter, master_reverb};
-use crate::patch_builder::{connect_node_vec, PatchTableItem, SpeakerDef};
+use crate::patch_builder::{PatchDef};
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
@@ -90,18 +90,6 @@ impl SynthMsg {
     /// Returns a control message index and its value
     pub fn control_change(&self) -> Option<(u8, u8)> {
         control_change_from(&self.msg)
-    }
-}
-
-/// Convenience method for extracting a SynthFunc from a Speaker-Definition Enum based on a selected speaker.
-fn def_to_synth(speaker: &Speaker, def: SpeakerDef) -> SynthFunc {
-    match def {
-        SpeakerDef::Stereo(v) => v,
-        SpeakerDef::LR { right, left } => match speaker {
-            Speaker::Left => left,
-            Speaker::Right => right,
-            Speaker::Both => unreachable!(),
-        },
     }
 }
 
@@ -374,11 +362,8 @@ struct StereoPlayer<const N: usize> {
 
 impl<const N: usize> DubleSpeaker<N> for StereoPlayer<N> {
     fn new(patch_table: Arc<Mutex<PatchTable>>, config: GlobalConfig) -> Self {
-        let first_table = patch_table.clone().lock().unwrap().entries[0].clone();
-        let cc_array_values = first_table.2.clone();
-        let tuner = first_table.3.clone();
         let center_source =
-            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config, cc_array_values, tuner);
+            SingleSourcePlayer::<N>::new(patch_table.clone(), Speaker::Both, config);
         Self { center_source }
     }
 
@@ -487,13 +472,11 @@ impl<const N: usize> SingleSourcePlayer<N> {
     fn new(patch_table: Arc<Mutex<PatchTable>>,
            speaker: Speaker,
            config: GlobalConfig,
-           cc_array: CcValuesArray,
-           tuner: TunerBuilder
         ) -> Self {
-        let synth_func = {
-            let patch_table = patch_table.lock().unwrap();
-            def_to_synth(&speaker, patch_table.entries[0].1.clone())
-        };
+        let first_table = patch_table.clone().lock().unwrap().entries[0].clone();
+        let synth_func= first_table.function;
+        let cc_array = first_table.effects.initial_cc;
+        let tuner = first_table.tuning.clone();
         let mut s = Self {
             states: [(); N].map(|_| SharedMidiState::new(config.cc_mappings, cc_array)),
             next: ModNumC::new(0),
@@ -565,10 +548,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
                 self.global_fx_cc_idx_4.clone(),
                 0.3,
                 &self.states[0]),
-            master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0])];
+            master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0]),
+            master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])];
         let stereo_net = connect_node_vec(&net_content, None);
         mix >> stereo_net
-            >> master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -660,12 +643,10 @@ impl<const N: usize> SingleSourcePlayer<N> {
         }
     }
 
-    fn change_synth(&mut self, patch_table: PatchTableItem) {
-        let (_, def, cc_vals, tuning) = patch_table;
-        self.all_sounds_off();
-        self.synth_func = def_to_synth(&self.speaker, def.clone());
-        self.set_cc_start_values(cc_vals);
-        self.set_midi_to_hz(tuning);
+    fn change_synth(&mut self, patch_def: PatchDef) {
+        self.synth_func = patch_def.function;
+        self.set_cc_start_values(patch_def.effects.initial_cc);
+        self.set_midi_to_hz(patch_def.tuning);
     }
 
     fn bend(&mut self, bend: u16) {
