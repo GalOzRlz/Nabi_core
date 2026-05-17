@@ -57,7 +57,7 @@ pub struct PatchFxChain {
 
 // todo: set assembled_chain field with refreshing
 impl PatchFxChain {
-    fn assemble_net(&mut self, shared_midi_state: &SharedMidiState) -> Net {
+    pub fn assemble_net(&mut self, shared_midi_state: &SharedMidiState) -> Net {
         let arc_vec: Arc<Vec<Net>> = Arc::new(
             self.chain
                 .iter()

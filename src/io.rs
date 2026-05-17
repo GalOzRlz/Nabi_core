@@ -1,7 +1,6 @@
-use std::ops::Shr;
 use crate::config_builder::{CcValuesArray, FreeVoiceStrategy, GlobalConfig, VoiceStealingConfig};
-use crate::effects::{master_tape_effect, master_limiter, master_reverb};
-use crate::patch_builder::{PatchDef};
+use crate::effects_builders::PatchFxChain;
+use crate::patch_builder::PatchDef;
 use crate::{
     control_change_from, note_velocity_from, patch_builder::PatchTable, SharedMidiState, SynthFunc,
     NUM_MIDI_VALUES,
@@ -14,7 +13,7 @@ use cpal::{
 };
 use crossbeam_queue::SegQueue;
 use crossbeam_utils::atomic::AtomicCell;
-use fundsp::prelude::{multipass, U2};
+use fundsp::prelude::U2;
 use fundsp::prelude64::split;
 use fundsp::{
     net::Net,
@@ -27,8 +26,6 @@ use midi_msg::{Channel, ChannelModeMsg, ChannelVoiceMsg, MidiMsg, SystemRealTime
 use midir::{Ignore, MidiInput, MidiInputPort};
 use read_input::{shortcut::input, InputBuild};
 use std::sync::{Arc, Mutex};
-use crate::eqs::{cc_eq_2_mono, cc_eq_2_stereo};
-use crate::tunings::TunerBuilder;
 
 #[derive(Clone, Debug)]
 /// Packages a [`MidiMsg`](https://crates.io/crates/midi-msg) with a designated `Speaker` to output the sound
@@ -461,11 +458,7 @@ struct SingleSourcePlayer<const N: usize> {
     patch_table: Arc<Mutex<PatchTable>>,
     speaker: Speaker,
     config: GlobalConfig,
-    // todo: replace with function that reads from config? return to u8 values - convert in function to 0.0-1.0
-    global_fx_cc_idx_1: usize,
-    global_fx_cc_idx_2: usize,
-    global_fx_cc_idx_3: usize,
-    global_fx_cc_idx_4: usize,
+    effects: PatchFxChain,
 }
 
 impl<const N: usize> SingleSourcePlayer<N> {
@@ -487,13 +480,13 @@ impl<const N: usize> SingleSourcePlayer<N> {
             master_volume: shared(0.15),
             patch_table,
             config: config.clone(),
-            global_fx_cc_idx_1: config.cc_mappings[0],
-            global_fx_cc_idx_2: config.cc_mappings[1],
-            global_fx_cc_idx_3: config.cc_mappings[2],
-            global_fx_cc_idx_4: config.cc_mappings[3],
+            effects: first_table.effects,
         };
         s.set_midi_to_hz(tuner);
         s
+    }
+    fn assemble_master(&mut self, mix: Net) -> Net {
+        mix >> self.effects.assemble_net(&self.states[0])
     }
 
     fn set_cc_start_values(&self, cc_array: CcValuesArray) {
@@ -540,18 +533,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
             }
             _ => panic!("Unsupported output count on synth! use either U1 or U2"),
         };
-        // need to figure out how to be able to hot swap master reverb with something else?
-        let net_content = vec![
-            master_limiter(),
-            cc_eq_2_stereo(
-                self.global_fx_cc_idx_3.clone(),
-                self.global_fx_cc_idx_4.clone(),
-                0.3,
-                &self.states[0]),
-            master_tape_effect(self.global_fx_cc_idx_2.clone(), &self.states[0]),
-            master_reverb(self.global_fx_cc_idx_1.clone(), &self.states[0])];
-        let stereo_net = connect_node_vec(&net_content, None);
-        mix >> stereo_net
+        self.assemble_master(mix)
     }
 
     fn decode(&mut self, msg: &MidiMsg) -> Option<RelayedMessage> {
@@ -647,6 +629,7 @@ impl<const N: usize> SingleSourcePlayer<N> {
         self.synth_func = patch_def.function;
         self.set_cc_start_values(patch_def.effects.initial_cc);
         self.set_midi_to_hz(patch_def.tuning);
+        self.effects = patch_def.effects
     }
 
     fn bend(&mut self, bend: u16) {
