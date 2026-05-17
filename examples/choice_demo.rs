@@ -24,6 +24,7 @@ fn main() -> anyhow::Result<()> {
         while reset.load() {}
         start_input_thread(midi_msgs.clone(), midi_in, in_port, reset.clone());
         let patch_table = Arc::new(Mutex::new(
+            // todo: make the function search for all in patches/*.toml
             create_ordered_patch_table(
                 &["patches/patches.toml"],
                 &"order.toml",
