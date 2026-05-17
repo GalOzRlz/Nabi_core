@@ -67,7 +67,7 @@ struct GlobalSection {
 pub struct GlobalConfig {
     pub voice_stealing: VoiceStealingConfig,
     pub voice_release: FreeVoiceStrategy,
-    pub cc_mappings: CcMapping,          // your type that wraps [u8; 4]
+    pub  cc_mappings: CcMapping,          // your type that wraps [u8; 4]
 }
 
 impl Default for GlobalConfig {

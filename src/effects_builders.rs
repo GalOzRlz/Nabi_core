@@ -37,7 +37,7 @@ macro_rules! register_effect {
             fn [<__effect_wrapper_ $struct_name:snake>] (
                 construction: &toml::Table,
                 cc_map: &std::collections::HashMap<String, usize>,
-            ) -> EffectBuilder {
+            ) -> EffectFunc {
                 let params = [<$struct_name Params>]::from_table(construction);
                 $factory_fn(&params, cc_map)
             }
@@ -48,7 +48,7 @@ macro_rules! register_effect {
                     factory: [<__effect_wrapper_ $struct_name:snake>] as fn(
                         &toml::Table,
                         &std::collections::HashMap<String, usize>,
-                    ) -> EffectBuilder,
+                    ) -> EffectFunc,
                     construction_defaults: &[ $( (stringify!($c_name), $c_default) ),* ],
                     cc_params: &[ $( ($cc_name, $cc_default_knob, $cc_default_val) ),* ],
                 }
@@ -57,7 +57,7 @@ macro_rules! register_effect {
     };
 }
 
-pub type EffectBuilder = Box<
+pub type EffectFunc = Box<
     dyn Fn(&SharedMidiState) -> Net
     + Send
     + Sync
@@ -67,7 +67,7 @@ pub type EffectBuilder = Box<
 pub type EffectFactory = fn(
     construction: &Table,
     knob_map: &HashMap<String, usize>,
-) -> EffectBuilder;
+) -> EffectFunc;
 
 pub struct EffectDef {
     pub name: &'static str,
@@ -81,7 +81,7 @@ inventory::collect!(EffectDef);
 
 #[derive(Clone)]
 pub struct PatchFxChain {
-    pub chain: Arc<Vec<EffectBuilder>>,
+    pub chain: Arc<Vec<EffectFunc>>,
     pub initial_cc: CcValuesArray,
     /// (knob_index 1‑based, label)
     pub knob_labels: Vec<(usize, String)>,

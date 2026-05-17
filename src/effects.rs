@@ -1,13 +1,11 @@
 use crate::effects_builders::{to_stereo, EffectDef};
-use std::collections::HashMap;
-use std::f32::consts::LN_2;
-use std::f64::consts::{PI};
 use crate::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use crate::{register_effect, SharedMidiState};
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
+use std::collections::HashMap;
 
-use crate::effects_builders::EffectBuilder;
+use crate::effects_builders::EffectFunc;
 use crate::eqs::master_lowpass;
 
 pub fn to_net<F:AudioNode + 'static>(fx: An<F>) -> Net {
@@ -84,14 +82,25 @@ pub fn tape_wow(depth: Net) -> Net {
     Net::wrap(Box::new(wet_amount.clone()|wet_amount))
 }
 
-pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net {
-    let depth: Net = Net::wrap(Box::new(
-        var(&shared_midi_state.control_change[cc].clone()))) >> sensitive_cc_smooth();
-    tape_wow(depth)
+pub fn tape_effect_factory(params: &TapeParams, cc_map: &HashMap<String, usize>) -> EffectFunc {
+    let _ = params.blank;
+    let depth_val    = *cc_map.get("depth").unwrap_or(&0);
+    Box::new(move | state| {
+        let depth_net = to_net(state.get_control_change(depth_val));
+        tape_wow(depth_net)
+    })
 }
 
+register_effect!(
+    struct: Tape,
+    name: "tape_drift",
+    factory: tape_effect_factory,
+    construction_params: [(blank, 0.0)],
+    cc_params: [("depth", 2, 0.4)]
+);
 
-fn fundsp_reverb_factory(params: &ReverbParams, cc_map: &HashMap<String, usize>) -> EffectBuilder {
+
+fn fundsp_reverb_factory(params: &ReverbParams, cc_map: &HashMap<String, usize>) -> EffectFunc {
     let room_size = params.room_size;   // ← typed, compiler‑checked
     let damping   = params.damping;
     let length    = params.length;
@@ -109,3 +118,4 @@ register_effect!(
     construction_params: [(room_size, 8.8), (damping, 0.5), (length, 2.8)],
     cc_params: [("wet_amount", 1, 0.5)]
 );
+
