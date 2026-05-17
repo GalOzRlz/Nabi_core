@@ -245,8 +245,8 @@ pub fn build_patch_table(programs: &[TomlPatchDef]) -> PatchTable {
             function: synth_func,
             name: prog.name.clone(),
             tuning,
-            sound_config: None,   // or keep the original clone if needed
-            effects: fx_chain,                  // moved into closure, but we still have it here? Wait – `fx_chain` was moved into the closure above.
+            sound_config: None,
+            effects: fx_chain,
         };
 
         patch_defs.push(patch_def);
@@ -269,7 +269,7 @@ fn reorder_by_names(entries: &mut Vec<PatchDef>, order: &[String]) {
     let old_entries = std::mem::take(entries);
 
     // Attach original index to each entry.
-    let mut indexed: Vec<(usize, PatchDef)> = old_entries
+    let indexed: Vec<(usize, PatchDef)> = old_entries
         .into_iter()
         .enumerate()
         .collect();

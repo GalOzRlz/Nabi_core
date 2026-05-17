@@ -1,4 +1,4 @@
-use crate::effects_builders::{EffectDef, EffectInput};
+use crate::effects_builders::{to_stereo, EffectDef};
 use std::collections::HashMap;
 use std::f32::consts::LN_2;
 use std::f64::consts::{PI};
@@ -6,7 +6,7 @@ use crate::modulators::{smooth_noise_constructor, smooth_random_lfo};
 use crate::{register_effect, SharedMidiState};
 use fundsp::combinator::An;
 use fundsp::prelude64::*;
-use toml::Table;
+
 use crate::effects_builders::EffectBuilder;
 use crate::eqs::master_lowpass;
 
@@ -31,6 +31,7 @@ fn sensitive_cc_smooth() -> An<Follow<f64>> {
 /// Factory for stereo effects with wet/dry control via Net  (suitable for live Midi CC)
 fn cc_controlled_wet_dry_fx(wet_amount: Net, effect: Net) -> Net {
     // Duplicate wet to stereo (0 inputs, 2 outputs)
+    let effect = to_stereo(effect);
     let wet_amount =  wet_amount >> cc_smooth();
     let wet_stereo = wet_amount.clone() | wet_amount.clone();
 
@@ -89,79 +90,22 @@ pub fn master_tape_effect(cc: usize, shared_midi_state: &SharedMidiState) -> Net
     tape_wow(depth)
 }
 
-pub fn pitch_shifter(pitch_st: f32, freq_hz: f32, wet_amt: f32) -> Net {
-    let max_delay = 0.1; // 100 ms – supports grain rates down to ~10 Hz for octave shifts
-    let freq_hz= freq_hz.clamp(20.0, 100.0);
-    let ratio = (pitch_st * LN_2 * 1.0).exp();   // 2.0 for +12, 0.5 for -12
-    let depth_mag = ((ratio - 1.0).abs() / freq_hz)
-        .min(max_delay  * 0.999);
-    let min_delay = max_delay - depth_mag;
 
-    let phasor = lfo(move |t: f64| {
-        let phase = (t * freq_hz as f64).fract();
-        phase
-    });
-
-    // Two candidate delay modulations:
-    // - up_delay: decreasing delay → pitch up
-    // - down_delay: increasing delay → pitch down
-    let up_delay = dc(max_delay) - (phasor.clone() * dc(depth_mag ));
-    let down_delay = dc(min_delay) + (phasor * dc(depth_mag ));
-
-    // Select which delay to use based on sign of pitch_st
-    let control = dc(if pitch_st >= 0.0 { 1.0 } else { 0.0 });
-    let mod_sig = up_delay * control.clone() + down_delay * (dc(1.0) - control);
-
-    let amp_env = lfo(move |t: f64| {
-        let phase = (t * freq_hz as f64).fract();
-        0.5 - 0.5 * (2.0 * PI * phase).cos()
-    });
-
-    // Apply the modulated delay line
-    let shifted = (pass() | mod_sig) >> tap(min_delay, max_delay);
-
-    let shifted_env = shifted * amp_env;
-
-    // Smooth with short decay delay
-    let feedback_line = feedback(delay(0.003) * 0.5);
-
-    // Dry/wet wet_amount with feedback on wet path
-    let dry = pass() * dc(1.0 - wet_amt);
-    let wet = shifted_env >> feedback_line * dc(wet_amt);
-    to_net(dry & wet)
-}
-
-
-pub fn frequency_shifter_factory(input: &EffectInput) -> EffectBuilder {
-    let pitch_st = input.param("pitch_st", 12.0);
-    let freq_hz   = input.param("freq_hz", 60.0);
-    let wet_amount_cc    = input.cc_knob("wet_amount");
+fn fundsp_reverb_factory(params: &ReverbParams, cc_map: &HashMap<String, usize>) -> EffectBuilder {
+    let room_size = params.room_size;   // ← typed, compiler‑checked
+    let damping   = params.damping;
+    let length    = params.length;
+    let mix_cc    = *cc_map.get("wet_amount").unwrap_or(&0);
     Box::new(move | state| {
-        let ps = pitch_shifter(pitch_st as f32, freq_hz as f32, 1.0);
-        let wet_amount = state.control_change_net(wet_amount_cc);
-        cc_controlled_wet_dry_fx(wet_amount, ps)
-
-    })
-}
-
-register_effect!("dirty_pitch_shifter", frequency_shifter_factory,
-    construction_params: [ ("pitch_st", 12.0), ("freq_hz", 60.0),],
-    cc_params: [ ("wet_amount", 2, 0.6) ]
-);
-
-
-fn fundsp_reverb_factory(input: &EffectInput) -> EffectBuilder {
-    let room_size = input.param("room_size", 0.8);
-    let damping   = input.param("damping", 0.5);
-    let length    = input.param("length", 3.0);
-    let wet_amount_cc    = input.cc_knob("wet_amount");
-    Box::new(move | state| {
-        let wet_amount = state.get_control_change(wet_amount_cc);
+        let wet_amount = state.get_control_change(mix_cc);
         cc_controlled_reverb(to_net(wet_amount), length as f32, room_size as f32, damping as f32)
     })
 }
 
-register_effect!("reverb", fundsp_reverb_factory,
-    construction_params: [ ("room_size", 0.8), ("damping", 0.5), ("length", 3.0) ],
-    cc_params: [ ("wet_amount", 1, 0.5) ]
+register_effect!(
+    struct: Reverb,
+    name: "simple_reverb",
+    factory: fundsp_reverb_factory,
+    construction_params: [(room_size, 8.8), (damping, 0.5), (length, 2.8)],
+    cc_params: [("wet_amount", 1, 0.5)]
 );

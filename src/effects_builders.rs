@@ -9,52 +9,52 @@ use crate::SharedMidiState;
 #[macro_export]
 macro_rules! register_effect {
     (
-        $name:expr,
-        $factory_fn:ident,                          // author's function: fn(&EffectInput) -> EffectBuilder
-        construction_params: [ $( ($c_name:expr, $c_default:expr) ),* $(,)? ],
+        struct: $struct_name:ident,
+        name: $name:expr,
+        factory: $factory_fn:ident,
+        construction_params: [ $( ($c_name:ident, $c_default:expr) ),* $(,)? ],
         cc_params: [ $( ($cc_name:expr, $cc_default_knob:expr, $cc_default_val:expr) ),* $(,)? ]
     ) => {
-        // Wrapper that matches the EffectFactory signature
         paste::paste! {
-            fn [<__effect_wrapper_ $name>] (
+            // Params struct (PascalCase)
+            pub struct [<$struct_name Params>] {
+                $( pub $c_name: f64, )*
+            }
+
+            impl [<$struct_name Params>] {
+                fn from_table(table: &toml::Table) -> Self {
+                    Self {
+                        $(
+                            $c_name: table.get(stringify!($c_name))
+                                .and_then(|v| v.as_float())
+                                .unwrap_or($c_default),
+                        )*
+                    }
+                }
+            }
+
+            // Wrapper – now completely snake_case
+            fn [<__effect_wrapper_ $struct_name:snake>] (
                 construction: &toml::Table,
                 cc_map: &std::collections::HashMap<String, usize>,
             ) -> EffectBuilder {
-                let input = EffectInput { construction, cc_map };
-                $factory_fn(&input)
+                let params = [<$struct_name Params>]::from_table(construction);
+                $factory_fn(&params, cc_map)
             }
 
             inventory::submit! {
                 EffectDef {
                     name: $name,
-                    factory: [<__effect_wrapper_ $name>] as fn(
+                    factory: [<__effect_wrapper_ $struct_name:snake>] as fn(
                         &toml::Table,
                         &std::collections::HashMap<String, usize>,
                     ) -> EffectBuilder,
-                    construction_defaults: &[ $( ($c_name, $c_default) ),* ],
+                    construction_defaults: &[ $( (stringify!($c_name), $c_default) ),* ],
                     cc_params: &[ $( ($cc_name, $cc_default_knob, $cc_default_val) ),* ],
                 }
             }
         }
     };
-}
-
-pub struct EffectInput<'a> {
-    pub construction: &'a Table,
-    pub cc_map: &'a HashMap<String, usize>,
-}
-
-impl<'a> EffectInput<'a> {
-    pub fn param(&self, key: &str, default: f64) -> f64 {
-        self.construction
-            .get(key)
-            .and_then(|v| v.as_float())
-            .unwrap_or(default)
-    }
-
-    pub fn cc_knob(&self, key: &str) -> usize {
-        *self.cc_map.get(key).unwrap_or(&0)
-    }
 }
 
 pub type EffectBuilder = Box<
@@ -76,8 +76,8 @@ pub struct EffectDef {
     /// (param_name, default_knob, default_value)
     pub cc_params: &'static [(&'static str, usize, f64)],
 }
-inventory::collect!(EffectDef);
 
+inventory::collect!(EffectDef);
 
 #[derive(Clone)]
 pub struct PatchFxChain {
@@ -112,7 +112,7 @@ impl PatchFxChain {
                     .unwrap_or_else(|| panic!("Unknown effect: {}", eff_name));
 
                 // ---- Construction values ----
-                let mut construction = toml::Table::new();
+                let mut construction = Table::new();
                 // defaults from the effect definition
                 for (k, v) in def.construction_defaults.iter() {
                     construction.insert(k.to_string(), toml::Value::from(*v));
@@ -170,7 +170,7 @@ impl PatchFxChain {
 }
 
 
-fn to_stereo(net: Net) -> Net {
+pub fn to_stereo(net: Net) -> Net {
     match net.inputs() {
         1 => (net.clone() | net),
         2 => net,

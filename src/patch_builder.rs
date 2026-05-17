@@ -1,10 +1,7 @@
-use std::collections::HashMap;
-use crate::config_builder::{TomlEffectSection};
-use crate::tunings::{TunerBuilder, TunerEntry};
+use crate::tunings::{TunerBuilder};
 use crate::{SharedMidiState, SynthFunc};
 use fundsp::prelude::{multipass, AudioUnit, U2};
 use inventory;
-use fundsp::net::Net;
 use crate::effects_builders::PatchFxChain;
 
 pub type SoundBuilder = fn(state: &SharedMidiState) -> Box<dyn AudioUnit>;
